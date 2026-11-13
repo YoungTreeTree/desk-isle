@@ -20,6 +20,8 @@ struct Model3DFile: Codable, Sendable {
     var sourceTriangles: Int?
 
     init(from url: URL) throws {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 20, size <= 16 * 1024 * 1024 else { throw Model3DError.invalid("GLB 文件须小于 16 MiB。") }
         try self.init(source: Data(contentsOf: url), name: url.deletingPathExtension().lastPathComponent, quality: .smooth)

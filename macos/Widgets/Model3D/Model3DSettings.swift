@@ -4,37 +4,13 @@ import UniformTypeIdentifiers
 
 extension LayoutEditor {
     func chooseModel3D() {
-        guard !applying,!importingModel,!loadingLayout,draft.model3D != nil || canAdd(.model3D) else { return }
+        guard !applying,!libraryBusy,!loadingLayout,draft.model3D != nil || canAdd(.model3D) else { return }
         notice=""
-        showingModelLibrary=true
-    }
-
-    func chooseCustomModel3D() {
-        guard !applying,!importingModel,!loadingLayout,draft.model3D != nil || canAdd(.model3D) else { return }
-        let editingID=library.editingID
-        let panel=NSOpenPanel();panel.title="导入自定义 3D 模型";panel.prompt="导入"
-        panel.allowedContentTypes=[UTType(filenameExtension:"glb") ?? .data]
-        panel.allowsMultipleSelection=false;panel.canChooseDirectories=false
-        importingModel=true
-        Task {
-            defer { importingModel=false }
-            let response: NSApplication.ModalResponse
-            if let window=NSApp.keyWindow { response=await panel.beginSheetModal(for:window) }
-            else { response=await panel.begin() }
-            guard response == .OK,let url=panel.url else { return }
-            notice="正在准备模型和贴图…"
-            do {
-                let file=try await Task.detached(priority:.userInitiated){ try Model3DFile(from:url) }.value
-                guard editingID == library.editingID else { throw Model3DError.invalid("布局已切换，请在当前布局重新选择模型。") }
-                try importModel3D(file)
-                showingModelLibrary=false
-                notice="模型已保存到 Mac，点击应用后上传到小屏。"
-            } catch { notice=error.localizedDescription }
-        }
+        resourcePicker = ResourcePickerRequest(purpose: .model, layoutID: library.editingID)
     }
 
     func useBuiltInModel3D(_ model: BuiltInModel3D) async {
-        guard !applying,!importingModel,!loadingLayout,draft.model3D != nil || canAdd(.model3D) else { return }
+        guard !applying,!libraryBusy,!loadingLayout,draft.model3D != nil || canAdd(.model3D) else { return }
         let editingID=library.editingID
         importingModel=true
         defer { importingModel=false }
@@ -43,13 +19,17 @@ extension LayoutEditor {
             let file=try await Task.detached(priority:.userInitiated){ try model.load() }.value
             guard editingID == library.editingID else { throw Model3DError.invalid("布局已切换，请在当前布局重新选择模型。") }
             try importModel3D(file)
-            showingModelLibrary=false
-            notice="模型已保存到 Mac，点击应用后上传到小屏。"
+            if flushLayoutSave() {
+                resourcePicker=nil
+                notice="模型已保存到 Mac，点击应用后上传到小屏。"
+            } else { notice=libraryError ?? "布局保存失败，请重试。" }
         } catch { notice=error.localizedDescription }
     }
-    func importModel3D(_ file: Model3DFile) throws {
+    func importModel3D(_ file: Model3DFile, storedID: UUID? = nil) throws {
         guard draft.model3D != nil || canAdd(.model3D) else { throw Model3DError.invalid("当前布局无法添加 3D 组件。") }
-        draftModelID=try libraryStore.storeModel(file);modelName=file.name
+        let resourceID = try storedID ?? libraryStore.storeModel(file)
+        try libraryStore.resources.recordUse(of: resourceID)
+        draftModelID=resourceID;modelName=file.name
         modelOptimized=file.quality == .smooth;modelTriangles=file.triangles;modelSourceTriangles=file.sourceTriangles ?? file.triangles
         modelStats=nil
         if draft.model3D == nil {
@@ -59,7 +39,8 @@ extension LayoutEditor {
         selectedID=Component.model3DID
     }
     func changeModelDetail() {
-        guard !applying,!importingModel,!loadingLayout,let id=draftModelID else { return }
+        guard !applying,!libraryBusy,!loadingLayout,let id=draftModelID else { return }
+        let editingID = library.editingID
         let store=libraryStore, quality:Model3DQuality=modelOptimized ? .original : .smooth
         importingModel=true
         notice=quality == .smooth ? "正在生成流畅版，保留原文件和动画…" : "正在恢复原始模型细节…"
@@ -70,6 +51,9 @@ extension LayoutEditor {
                     let original=try store.model(id)
                     return try Model3DFile(source:original.source,name:original.name,quality:quality)
                 }.value
+                guard editingID == library.editingID, draftModelID == id else {
+                    throw Model3DError.invalid("布局或模型已切换，请在当前布局重试。")
+                }
                 try importModel3D(file)
                 modelStats=nil
                 notice="模型已保存到 Mac，点击应用后上传到小屏。"

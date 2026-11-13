@@ -52,6 +52,7 @@ struct LayoutLibraryStore: Sendable {
     let root: URL
     var manifest: URL { root.appendingPathComponent("Library.json") }
     var backup: URL { root.appendingPathComponent("Library.backup.json") }
+    var resources: ResourceLibraryStore { ResourceLibraryStore(layouts: self) }
 
     static var local: Self {
         Self(root: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -119,9 +120,7 @@ struct LayoutLibraryStore: Sendable {
     }
 
     func storePicture(_ file: PictureFile) throws -> UUID {
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        return try storeAsset(encoder.encode(file))
+        try resources.storePicture(file)
     }
 
     func picture(_ id: UUID) throws -> PictureFile {
@@ -132,8 +131,7 @@ struct LayoutLibraryStore: Sendable {
         try PropertyListDecoder().decode(Model3DFile.self,from:Data(contentsOf:assetURL(id)))
     }
     func storeModel(_ file: Model3DFile) throws -> UUID {
-        let encoder=PropertyListEncoder();encoder.outputFormat = .binary
-        return try storeAsset(encoder.encode(file))
+        try resources.storeModel(file)
     }
 
     func wallpaper(_ id: UUID?) throws -> ScreenWallpaper {
@@ -142,9 +140,7 @@ struct LayoutLibraryStore: Sendable {
     }
 
     func importWallpaper(from source: URL) throws -> (UUID, ScreenWallpaper) {
-        let id = UUID()
-        let wallpaper = try WallpaperStore(url: assetURL(id)).importImage(from: source)
-        return (id, wallpaper)
+        try resources.importWallpaper(from: source)
     }
 
     func validateReferences(_ scene: LayoutScene) throws {
@@ -182,19 +178,18 @@ struct LayoutLibraryStore: Sendable {
         return PreparedLayoutScene(wallpaper: wallpaper, pictures: pictures, model:model)
     }
 
-    // Keep references from both the current manifest and its recoverable backup.
-    func collectUnusedAssets(in library: LayoutLibrary) {
+    // Include snapshots and recovery data, even when their source layout has since changed.
+    func referencedAssetIDs(in library: LayoutLibrary) throws -> Set<UUID> {
         var scenes = library.layouts.map(\.scene) + [library.requested?.scene, library.displayed?.scene].compactMap { $0 }
-        if let bytes = try? Data(contentsOf: backup), let old = try? decode(bytes) {
+        if FileManager.default.fileExists(atPath: backup.path) {
+            let old = try decode(Data(contentsOf: backup))
             scenes += old.layouts.map(\.scene) + [old.requested?.scene, old.displayed?.scene].compactMap { $0 }
         }
-        let used = Set(scenes.flatMap { Array($0.pictureIDs.values) + [$0.wallpaperID,$0.modelID].compactMap { $0 } })
-        let directory = root.appendingPathComponent("Assets")
-        for url in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] {
-            if let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent), !used.contains(id) {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
+        return Set(scenes.flatMap { Array($0.pictureIDs.values) + [$0.wallpaperID,$0.modelID].compactMap { $0 } })
+    }
+
+    func collectUnusedAssets(in library: LayoutLibrary) {
+        resources.collectUnusedAssets(in: library)
     }
 }
 

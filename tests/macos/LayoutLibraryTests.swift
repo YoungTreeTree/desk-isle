@@ -111,10 +111,10 @@ final class LayoutLibraryTests: XCTestCase {
         let profile=await seed(editor,scene:try scene(editor.libraryStore))
         let oldSelection=LayoutSelection(id:profile.id,scene:profile.scene)
         editor.library.requested=oldSelection;editor.library.displayed=oldSelection
-        editor.chooseModel3D();XCTAssertTrue(editor.showingModelLibrary)
+        editor.chooseModel3D();XCTAssertEqual(editor.resourcePicker?.purpose, .model)
         XCTAssertNil(editor.draftModelID)
         await editor.useBuiltInModel3D(.bb8)
-        XCTAssertFalse(editor.showingModelLibrary);XCTAssertFalse(editor.importingModel)
+        XCTAssertNil(editor.resourcePicker);XCTAssertFalse(editor.importingModel)
         let id=try XCTUnwrap(editor.draftModelID)
         XCTAssertEqual(try editor.libraryStore.model(id).name,"BB8")
         XCTAssertEqual(editor.draft.model3D?.width,320);XCTAssertEqual(editor.draft.model3D?.height,480)
@@ -125,7 +125,7 @@ final class LayoutLibraryTests: XCTestCase {
         editor.draftModelScale=2
         let component=editor.draft.model3D
         await editor.useBuiltInModel3D(.bb8)
-        XCTAssertNotEqual(editor.draftModelID,id)
+        XCTAssertEqual(editor.draftModelID,id, "Reselecting the same model reuses its immutable asset")
         XCTAssertEqual(editor.draft.model3D,component);XCTAssertEqual(editor.draftModelScale,2)
         XCTAssertEqual(editor.library.displayed,oldSelection)
     }
@@ -150,6 +150,32 @@ final class LayoutLibraryTests: XCTestCase {
         await editor.deleteLayout(copy.id)
         XCTAssertEqual(editor.library.layouts.count, 1)
         XCTAssertFalse(editor.library.canDelete(original.id))
+    }
+
+    func testResourceReselectionPreservesDisplayedSceneAndRejectsStalePicker() async throws {
+        defer { cleanup() }
+        let editor = editor(try root())
+        let original = await seed(editor, scene: try scene(editor.libraryStore))
+        let displayed = LayoutSelection(id: original.id, scene: original.scene)
+        editor.library.displayed = displayed
+        let input = editor.libraryStore.root.appendingPathComponent("reusable.jpg")
+        try jpeg(0.8).write(to: input)
+        let pictureID = try editor.libraryStore.storePicture(PictureFile(from: input))
+        let resource = try XCTUnwrap(editor.libraryStore.resources.load().entries.first { $0.assetIDs.contains(pictureID) })
+        try FileManager.default.removeItem(at: input)
+        editor.choosePicture()
+        let request = try XCTUnwrap(editor.resourcePicker)
+        await editor.useResource(resource, for: request)
+        XCTAssertNil(editor.resourcePicker)
+        XCTAssertTrue(editor.draftPictureIDs.values.contains(pictureID))
+        XCTAssertEqual(editor.library.displayed, displayed)
+        XCTAssertNil(editor.library.requested)
+        let count = editor.draft.components.count
+        await editor.createLayout(copying: original.id)
+        await editor.useResource(resource, for: request)
+        XCTAssertEqual(editor.draft.components.count, count)
+        XCTAssertTrue(editor.notice.contains("布局已切换"))
+        XCTAssertEqual(editor.library.displayed, displayed)
     }
 
     func testBackupRecoveryAndUnknownSchemaProtection() throws {

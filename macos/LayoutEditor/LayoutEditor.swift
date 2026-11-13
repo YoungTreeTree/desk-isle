@@ -18,7 +18,8 @@ final class LayoutEditor: ObservableObject {
     @Published var wallpaperNotice: String?
     @Published var importingPicture = false
     @Published var importingModel = false
-    @Published var showingModelLibrary = false
+    @Published var resourcePicker: ResourcePickerRequest?
+    @Published var resourceBusy = false
     @Published var modelName: String?
     @Published var modelOptimized = false
     @Published var modelTriangles: Int?
@@ -107,7 +108,7 @@ final class LayoutEditor: ObservableObject {
         return !draft.components.contains { $0.id == definition.wireID }
     }
     var canAddPicture: Bool { canAdd(.pictures) }
-    var canApply: Bool { !applying && !importingPicture && !importingModel && !importingWallpaper && !loadingLayout && !libraryReadFailed && draft.isValid && (hasChanges || unsaved || syncPending) }
+    var canApply: Bool { !applying && !resourceBusy && !importingPicture && !importingModel && !importingWallpaper && !loadingLayout && !libraryReadFailed && draft.isValid && (hasChanges || unsaved || syncPending) }
 
     func changeDirection(_ direction: ScreenDirection) {
         if draft.changeDirection(to: direction) {

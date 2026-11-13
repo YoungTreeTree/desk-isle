@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render README previews from the real SwiftUI views using isolated, synthetic state."""
 from pathlib import Path
+import argparse
 import os
 import shutil
 import subprocess
@@ -10,6 +11,10 @@ WORK = ROOT / "build/docs-preview"
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resources", action="store_true", help="Render the resource picker with isolated example assets")
+    parser.add_argument("--output", type=Path, default=ROOT / "docs/images")
+    args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)
     # Compile a disposable copy so the installed app, its signing, and its settings stay untouched.
     for name in ("macos", "shared"):
@@ -30,7 +35,10 @@ def main():
         env["MIUCS_LOCAL_PATH"] = str(checkout)
     subprocess.run(["swift", "build", "--package-path", str(WORK), "--product", "DeskIsle"], env=env, check=True)
     binary = subprocess.check_output(["swift", "build", "--package-path", str(WORK), "--show-bin-path"], env=env, text=True).strip()
-    subprocess.run([str(Path(binary) / "DeskIsle"), str(ROOT / "docs/images")], check=True)
+    command = [str(Path(binary) / "DeskIsle"), str(args.output.resolve())]
+    if args.resources:
+        command.append("--resources")
+    subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":

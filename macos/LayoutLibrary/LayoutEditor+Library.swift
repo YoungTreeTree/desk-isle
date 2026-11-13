@@ -8,7 +8,7 @@ extension LayoutEditor {
                            pictureIDs: draftPictureIDs.filter { used.contains($0.key) }, skinID: petSettings.selectedID,
                            modelID: draft.model3D == nil ? nil : draftModelID,modelScale:draft.model3D == nil ? nil : draftModelScale)
     }
-    var libraryBusy: Bool { importingPicture || importingModel || importingWallpaper || migratingLegacy || libraryReadFailed }
+    var libraryBusy: Bool { resourceBusy || importingPicture || importingModel || importingWallpaper || migratingLegacy || libraryReadFailed }
 
     func recordDraftChange() {
         guard !restoringScene, !libraryReadFailed else { return }

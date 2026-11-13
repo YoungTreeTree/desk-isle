@@ -11,7 +11,7 @@ struct PreviewMain {
         application.setActivationPolicy(.prohibited)
         application.appearance = NSAppearance(named: .aqua)
         application.finishLaunching()
-        guard CommandLine.arguments.count == 2 else { fatalError("Pass an output directory") }
+        guard CommandLine.arguments.count >= 2 else { fatalError("Pass an output directory") }
         let output = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let stateRoot = FileManager.default.temporaryDirectory
@@ -31,6 +31,10 @@ struct PreviewMain {
         let pet = PetSettings(usb: usb, preferences: preferences, importLegacySettings: false)
         let editor = LayoutEditor(usb: usb, displaySettings: display, connections: settings, petSettings: pet,
                                   libraryStore: LayoutLibraryStore(root: stateRoot.appendingPathComponent("Layouts")))
+        if CommandLine.arguments.contains("--resources") {
+            try resourcePreviews(editor: editor, output: output, stateRoot: stateRoot)
+            return
+        }
         let wallpaper = try makeWallpaper()
         editor.wallpaper = wallpaper
         editor.connected = true
@@ -117,18 +121,19 @@ struct PreviewMain {
 
     /// AppKit-backed controls and scroll views require a hosting window, not ImageRenderer.
     /// Render only this isolated fixture's view; never capture the user's desktop or other windows.
-    @MainActor static func saveWindow<V: View>(_ view: V, size: CGSize, to url: URL) throws {
+    @MainActor static func saveWindow<V: View>(_ view: V, size: CGSize, to url: URL, settle: TimeInterval = 0.3,
+                                             scheme: ColorScheme = .light) throws {
         let content = view.frame(width: size.width, height: size.height)
-            .environment(\.colorScheme, .light).environment(\.locale, Locale(identifier: "zh_CN"))
+            .environment(\.colorScheme, scheme).environment(\.locale, Locale(identifier: "zh_CN"))
         let host = NSHostingView(rootView: content)
         let window = NSWindow(contentRect: CGRect(origin: CGPoint(x: -20000, y: -20000), size: size),
                               styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: .aqua)
+        window.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.close() }
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        RunLoop.main.run(until: Date().addingTimeInterval(settle))
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw PreviewError.render }
@@ -139,6 +144,46 @@ struct PreviewMain {
     }
 
     enum PreviewError: Error { case render }
+
+    @MainActor static func resourcePreviews(editor: LayoutEditor, output: URL, stateRoot: URL) throws {
+        let names = ["薄雾山谷", "暮色渐变", "海盐蓝", "暖沙", "鼠尾草"]
+        for (index, name) in names.enumerated() {
+            let image = LinearGradient(colors: [.init(hue: Double(index)*0.18, saturation: 0.24, brightness: 0.88),
+                                                 .init(hue: Double(index)*0.18+0.06, saturation: 0.44, brightness: 0.5)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+            let url = stateRoot.appendingPathComponent("\(name).png")
+            try save(image, size: CGSize(width: 400, height: 300), to: url)
+            let id = try editor.libraryStore.storePicture(PictureFile(from: url))
+            try editor.libraryStore.resources.recordUse(of: id)
+            if index == 0 {
+                let (wallpaperID, wallpaper) = try editor.libraryStore.importWallpaper(from: url)
+                editor.draftWallpaperID = wallpaperID
+                editor.wallpaper = wallpaper
+                let entry = try editor.libraryStore.resources.load().entries.first { $0.assetIDs.contains(id) }!
+                try editor.libraryStore.resources.setFavorite(true, id: entry.id)
+            }
+        }
+        let model = try BuiltInModel3D.bb8.load()
+        let id = try editor.libraryStore.storeModel(model)
+        try editor.libraryStore.resources.recordUse(of: id)
+        let entry = try editor.libraryStore.resources.load().entries.first { $0.assetIDs.contains(id) }!
+        guard let thumbnail = ModelResourceThumbnail.render(model) else { throw PreviewError.render }
+        let thumbnailURL = editor.libraryStore.resources.thumbnails.appendingPathComponent("\(entry.id).png")
+        try FileManager.default.createDirectory(at: thumbnailURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let destination = CGImageDestinationCreateWithURL(thumbnailURL as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw PreviewError.render }
+        CGImageDestinationAddImage(destination, thumbnail, nil)
+        guard CGImageDestinationFinalize(destination) else { throw PreviewError.render }
+        try Data(contentsOf: thumbnailURL).write(to: output.appendingPathComponent("model-thumbnail.png"))
+        editor.recordDraftChange()
+        _ = editor.flushLayoutSave()
+        try saveWindow(ResourceLibraryView(editor: editor, request: ResourcePickerRequest(purpose: .manage, layoutID: editor.library.editingID)),
+                       size: CGSize(width: 740, height: 680), to: output.appendingPathComponent("resources-preview.png"), settle: 2)
+        try saveWindow(ResourceLibraryView(editor: editor, request: ResourcePickerRequest(purpose: .wallpaper, layoutID: editor.library.editingID)),
+                       size: CGSize(width: 740, height: 680), to: output.appendingPathComponent("wallpaper-picker-preview.png"), settle: 1)
+        try saveWindow(ResourceLibraryView(editor: editor, request: ResourcePickerRequest(purpose: .manage, layoutID: editor.library.editingID)),
+                       size: CGSize(width: 740, height: 680), to: output.appendingPathComponent("resources-dark-preview.png"), settle: 1, scheme: .dark)
+        print("Rendered resource library, wallpaper picker and model thumbnail with synthetic data")
+    }
 }
 
 private struct DemoWallpaper: View {
