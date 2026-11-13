@@ -80,7 +80,7 @@ struct ScreenPreview: View {
                 Menu {
                     Button("更换壁纸…") { editor.chooseWallpaper() }
                     Button("恢复默认壁纸") { editor.restoreDefaultWallpaper() }
-                        .disabled(!editor.wallpaper.isCustom)
+                        .disabled(editor.draftWallpaperID == nil)
                 } label: {
                     Label("壁纸", systemImage: "photo.on.rectangle")
                 }

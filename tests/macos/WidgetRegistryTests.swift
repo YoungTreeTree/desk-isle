@@ -103,8 +103,10 @@ final class WidgetRegistryTests: XCTestCase {
         let usb = LayoutUSB()
         let settings = ConnectionSettings(preferences: preferences, inspectConnections: false)
         let pet = PetSettings(usb: usb, preferences: preferences, importLegacySettings: false)
+        let libraryRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: libraryRoot) }
         var editor: LayoutEditor? = LayoutEditor(usb: usb, displaySettings: DisplaySettings(usb: usb),
-                                                connections: settings, petSettings: pet)
+                                                connections: settings, petSettings: pet, libraryStore: LayoutLibraryStore(root: libraryRoot))
         weak var weakEditor = editor
         weak var weakRuntime = editor?.widgets
         weak var weakPictures = editor?.pictureRuntime

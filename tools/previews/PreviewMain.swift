@@ -29,7 +29,8 @@ struct PreviewMain {
         settings.updateCodex { $0.home = stateRoot.appendingPathComponent("codex").path }
         let display = DisplaySettings(usb: usb, preferences: preferences)
         let pet = PetSettings(usb: usb, preferences: preferences, importLegacySettings: false)
-        let editor = LayoutEditor(usb: usb, displaySettings: display, connections: settings, petSettings: pet)
+        let editor = LayoutEditor(usb: usb, displaySettings: display, connections: settings, petSettings: pet,
+                                  libraryStore: LayoutLibraryStore(root: stateRoot.appendingPathComponent("Layouts")))
         let wallpaper = try makeWallpaper()
         editor.wallpaper = wallpaper
         editor.connected = true
@@ -40,6 +41,7 @@ struct PreviewMain {
             placed(.bluetooth, column: 24, row: 6), placed(.macLoad, column: 24, row: 1),
         ])
         editor.applied = editor.draft
+        editor.showingLibrary = false
         editor.selectedID = Component.notificationsID
         let instant: TimeInterval = 1_800_000_000
         editor.widgets.garminContent = GarminCardContent(snapshot: GarminSnapshot(

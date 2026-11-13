@@ -29,8 +29,21 @@ final class DeskIsleDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if editor.flushLayoutSave() { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "布局尚未保存"
+        alert.informativeText = editor.libraryError ?? "请修复存储问题后重试。"
+        alert.addButton(withTitle: "返回应用")
+        alert.addButton(withTitle: "仍然退出")
+        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         polling?.cancel()
+        editor.synchronization?.cancel()
+        editor.scenePreparation?.cancel()
+        editor.editPreparation?.cancel()
         displaySettings.stopFollowingSession()
         editor.stopNotifications()
         editor.stopPicturePlayback()

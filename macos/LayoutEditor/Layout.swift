@@ -1,6 +1,6 @@
 import Foundation
 
-enum ScreenDirection: Int, CaseIterable, Identifiable, Sendable {
+enum ScreenDirection: Int, CaseIterable, Identifiable, Codable, Sendable {
     case portrait, right, upsideDown, left
     var id: Int { rawValue }
     var isLandscape: Bool { rawValue % 2 == 1 }
@@ -67,7 +67,7 @@ struct ComponentSizePreset: Sendable {
     }
 }
 
-struct Component: Identifiable, Equatable, Sendable {
+struct Component: Identifiable, Equatable, Codable, Sendable {
     static let garminID = 0x8001
     static let codexID = 0x8002
     static let notificationsID = 0x8003
@@ -134,7 +134,7 @@ struct Component: Identifiable, Equatable, Sendable {
 
 }
 
-struct Panel: Equatable, Sendable {
+struct Panel: Equatable, Codable, Sendable {
     let nativeWidth: Int
     let nativeHeight: Int
     let maxComponents: Int
@@ -145,7 +145,7 @@ struct Panel: Equatable, Sendable {
                                 maxPixels: 1_843_200, maxJPEG: 98_304)
 }
 
-struct ScreenLayout: Equatable, Sendable {
+struct ScreenLayout: Equatable, Codable, Sendable {
     let panel: Panel
     var direction: ScreenDirection
     var components: [Component]

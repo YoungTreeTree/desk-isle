@@ -91,7 +91,7 @@ struct LayoutPage: View {
                 componentInspector(component)
             }
         }
-        .disabled(editor.applying || editor.importingPicture)
+        .disabled(editor.applying || editor.importingPicture || editor.importingWallpaper)
     }
 
     private func componentInspector(_ component: Component) -> some View {
@@ -203,22 +203,20 @@ struct LayoutPage: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            let wallpaperMessage = editor.importingWallpaper ? "正在准备壁纸…" :
-                editor.wallpaperNotice ?? (editor.wallpaperNeedsSync ?
-                    (editor.connected ? "正在同步壁纸…" : "壁纸已保存，连接小屏后同步") : nil)
+            let wallpaperMessage = editor.importingWallpaper ? "正在准备壁纸…" : editor.wallpaperNotice
             let message = !editor.draft.isValid ? "当前组件尺寸超出小屏支持的范围。" :
-                !editor.notice.isEmpty ? editor.notice :
+                editor.libraryError ?? (!editor.notice.isEmpty ? editor.notice :
                 wallpaperMessage ?? (editor.connected ?
                     (editor.hasChanges || editor.unsaved ? "有改动待应用" : "拖动组件，松手对齐网格") :
-                    "请连接支持布局设置的桌屿")
+                    "修改已保存到 Mac，可在连接后应用"))
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
             Spacer()
             Button("恢复默认") { editor.reset() }
-                .disabled(editor.applying || editor.importingPicture)
-            Button(editor.applying ? "正在应用…" : "应用到小屏") {
+                .disabled(editor.applying || editor.importingPicture || editor.importingWallpaper)
+            Button(editor.applying ? "正在应用…" : editor.connected ? "应用到小屏" : "连接后应用") {
                 Task { await editor.apply() }
             }
             .buttonStyle(.borderedProminent)

@@ -6,18 +6,40 @@ import Combine
 final class LayoutEditor: ObservableObject {
     let connections: ConnectionSettings
     let petSettings: PetSettings
-    @Published var draft = ScreenLayout.factory()
+    @Published var draft = ScreenLayout.factory() { didSet { recordDraftChange() } }
     @Published var applied = ScreenLayout.factory()
     @Published var selectedID: Int? = 1
     @Published var connected = false
     @Published var applying = false
     @Published var unsaved = false
     @Published var notice = ""
-    @Published var wallpaper = (try? WallpaperStore.local().load()) ?? ScreenWallpaper.bundled
+    @Published var wallpaper = ScreenWallpaper.bundled
     @Published var importingWallpaper = false
-    @Published var wallpaperNeedsSync = false
     @Published var wallpaperNotice: String?
     @Published var importingPicture = false
+    @Published var library = LayoutLibrary()
+    @Published var showingLibrary = true
+    @Published var libraryError: String?
+    @Published var loadingLayout = false
+    @Published var migratingLegacy = false
+    @Published var syncPending = false
+    let libraryStore: LayoutLibraryStore
+    let device: any LayoutDevice
+    var draftWallpaperID: UUID?
+    var draftPictureIDs: [Int: UUID] = [:]
+    var appliedWallpaper = ScreenWallpaper.bundled
+    var restoringScene = false
+    var libraryReadFailed = false
+    var saveTask: Task<Void, Never>?
+    var editGeneration = 0
+    var editPreparation: Task<(ScreenWallpaper, [Int: PictureAsset], String), Never>?
+    var scenePreparation: Task<PreparedLayoutScene, Error>?
+    var preparedEditingScene: LayoutScene?
+    var pendingPetSelection: LayoutSelection?
+    var syncGeneration = 0
+    var synchronization: Task<Void, Never>?
+    var deviceReady = false
+    var restoreRequested = true
     let usb: LayoutUSB
     let displaySettings: DisplaySettings
     let widgets: WidgetRuntime
@@ -27,7 +49,10 @@ final class LayoutEditor: ObservableObject {
     private var subscriptions: Set<AnyCancellable> = []
 
     init(usb: LayoutUSB, displaySettings: DisplaySettings, connections: ConnectionSettings = ConnectionSettings(),
-         petSettings: PetSettings? = nil) {
+         petSettings: PetSettings? = nil, libraryStore: LayoutLibraryStore = .local,
+         device: (any LayoutDevice)? = nil) {
+        self.libraryStore = libraryStore
+        self.device = device ?? usb
         self.usb = usb
         self.displaySettings = displaySettings
         self.connections = connections
@@ -36,6 +61,23 @@ final class LayoutEditor: ObservableObject {
         pictureRuntime = PictureRuntime(usb: usb)
         widgets.context = { [weak self] in self?.runtimeContext ?? .idle }
         pictureRuntime.context = { [weak self] in self?.runtimeContext ?? .idle }
+        do {
+            let loaded = try libraryStore.load()
+            library = loaded.library
+            if loaded.recovered { libraryError = "已从备份恢复布局库。" }
+        } catch {
+            libraryReadFailed = true
+            libraryError = "无法读取布局库，原文件已保留：\(error.localizedDescription)"
+        }
+        self.petSettings.onSelectionChange = { [weak self] in self?.recordDraftChange() }
+        self.petSettings.onReadinessChange = { [weak self] active in self?.completePendingPet(active: active) }
+        self.petSettings.onStatusChange = { [weak self] status in
+            guard let self, pendingPetSelection != nil, deviceReady else { return }
+            notice = "桌宠同步中：\(status)"
+        }
+        if let profile = library.layouts.first(where: { $0.id == library.editingID }) ?? library.layouts.first {
+            Task { [weak self] in await self?.loadForEditing(profile, showEditor: false) }
+        }
         // Forward only actual state changes; do not introduce a preview refresh timer.
         for publisher in [widgets.objectWillChange, pictureRuntime.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &subscriptions)
@@ -43,10 +85,10 @@ final class LayoutEditor: ObservableObject {
     }
 
     var runtimeContext: WidgetContext {
-        WidgetContext(draft: draft, applied: applied, connected: connected, applying: applying, revision: revision)
+        WidgetContext(draft: draft, applied: applied, connected: connected, applying: applying || !deviceReady, revision: revision)
     }
     var selected: Component? { draft.components.first { $0.id == selectedID } }
-    var hasChanges: Bool { draft != applied }
+    var hasChanges: Bool { library.displayed?.id != library.editingID || library.displayed?.scene != editingScene || draft != applied }
     var canAdd: Bool { draft.components.count < draft.panel.maxComponents }
     func canAdd(_ kind: BuiltInPlugin) -> Bool {
         let definition = WidgetRegistry.definition(for: kind)
@@ -56,7 +98,7 @@ final class LayoutEditor: ObservableObject {
         return !draft.components.contains { $0.id == definition.wireID }
     }
     var canAddPicture: Bool { canAdd(.pictures) }
-    var canApply: Bool { connected && !applying && !importingPicture && draft.isValid && (hasChanges || unsaved) }
+    var canApply: Bool { !applying && !importingPicture && !importingWallpaper && !loadingLayout && !libraryReadFailed && draft.isValid && (hasChanges || unsaved || syncPending) }
 
     func changeDirection(_ direction: ScreenDirection) {
         if draft.changeDirection(to: direction) {
