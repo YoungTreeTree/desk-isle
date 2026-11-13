@@ -144,4 +144,4 @@ Codex 和佳明默认不读取账号，桌宠输入默认不启用；账号连�
 - OSPTEK 面板初始化代码：[CC BY 4.0](OSPTEK-LICENSE.txt)。
 - MiSans 字体及字形资源：[来源与授权说明](THIRD_PARTY_LICENSE_WIDGET_FONT.txt)。
 
-Miucs 是独立依赖，其代码和皮肤需单独确认授权。默认壁纸 `resources/wallpaper.jpg` 与其他未明确授权的素材不包含在上述 MIT 授权范围内；发布前仍需完成授权核实或替换，见[开源准备清单](docs/open-source-readiness.md)。
+Miucs 是独立依赖，其代码和皮肤需单独确认授权。应用图标沿用 Miucs 的像素猫头，见[图标来源与生成方式](resources/icons/README.md)。默认壁纸 `resources/wallpaper.jpg` 与其他未明确授权的素材不包含在上述 MIT 授权范围内；发布前仍需完成授权核实或替换，见[开源准备清单](docs/open-source-readiness.md)。

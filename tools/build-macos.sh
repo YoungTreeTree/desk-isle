@@ -21,6 +21,7 @@ swiftc -parse-as-library -swift-version 6 -O -target "$(uname -m)-apple-macosx14
   "$root/helpers/notifications/DeskIsleCLI.swift" "$root/macos/Widgets/Notifications/NotificationEvent.swift" "$root/macos/Widgets/Notifications/NotificationSocket.swift" \
   -o "$app/Contents/Helpers/deskisle"
 cp "$root/resources/wallpaper.jpg" "$root/helpers/garmin/garmin_snapshot.py" "$root/helpers/garmin/garmin_auth.py" "$root/helpers/garmin/garmin_session.py" "$root/helpers/notifications/install-codex-notifications.py" "$app/Contents/Resources/"
+cp "$root/resources/DeskIsle.icns" "$app/Contents/Resources/DeskIsle.icns"
 cp "$font" "$app/Contents/Resources/MiSans-Regular.ttf"
 cp "$root/LICENSE" "$root/THIRD_PARTY_LICENSE_CODEX_USAGE.txt" "$root/THIRD_PARTY_LICENSE_WIDGET_FONT.txt" "$app/Contents/Resources/"
 cat > "$app/Contents/Info.plist" <<'PLIST'
@@ -32,6 +33,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>桌屿</string>
   <key>CFBundleDisplayName</key><string>桌屿</string>
   <key>CFBundleExecutable</key><string>DeskIsle</string>
+  <key>CFBundleIconFile</key><string>DeskIsle.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
