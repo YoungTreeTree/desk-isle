@@ -77,6 +77,13 @@ void desk_pet_reset(void)
     discard_upload();
 }
 
+void desk_pet_release(void)
+{
+    desk_pet_reset();
+    free(pack_storage);
+    pack_storage = NULL;
+}
+
 bool desk_pet_running(void)
 {
     return active != NULL;

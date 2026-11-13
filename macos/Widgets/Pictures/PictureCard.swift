@@ -9,6 +9,7 @@ enum PictureError: String, LocalizedError {
     case encodingFailed = "无法生成小屏可显示的图片。"
     case storageFailed = "无法将图片保存到本机。"
     case noRoom = "当前布局无法再添加图片组件。"
+    case cacheTooLarge = "这张 GIF 在当前尺寸下超过了板端动画缓存限制，请缩小组件或精简动图。"
 
     var errorDescription: String? { rawValue }
 }
@@ -69,7 +70,8 @@ struct PictureAsset: Sendable {
         let images: [Int: PictureFrameImage]
     }
 
-    static let frameInterval = 0.125
+    // Preparation/preview ceiling, not an extra delay after each serial transfer.
+    static let frameInterval = 1.0 / 30
     static let previewBudget = 24 * 1024 * 1024
     private static let maxPreparedFrames = 144
     private static let transparentBitmap = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
@@ -84,6 +86,34 @@ struct PictureAsset: Sendable {
 
     var isAnimated: Bool { frames.count > 1 }
 
+    func animation(side: Int) throws -> PictureAnimation {
+        guard isAnimated, duration.isFinite, duration > 0, duration <= 86_400 else { throw PictureError.cacheTooLarge }
+        let durationMS = Int((duration * 1000).rounded())
+        var bytes = Data("DIGA".utf8)
+        for value in [1, frames.count, side, side] {
+            withUnsafeBytes(of: UInt16(value).littleEndian) { bytes.append(contentsOf: $0) }
+        }
+        withUnsafeBytes(of: UInt32(durationMS).littleEndian) { bytes.append(contentsOf: $0) }
+        bytes.append(Data(count: 16 * frames.count))
+        func align() { bytes.append(Data(count: (64 - bytes.count % 64) % 64)) }
+        align()
+        for (index, frame) in frames.enumerated() {
+            guard let image = frame.images[side] else { throw PictureError.encodingFailed }
+            guard bytes.count + image.jpeg.count + (image.alphaMask?.count ?? 0) + 63 <= PictureAnimation.maxBytes else {
+                throw PictureError.cacheTooLarge
+            }
+            let values = [Int((frame.start * 1000).rounded()), bytes.count, image.jpeg.count, image.alphaMask?.count ?? 0]
+            for (field, value) in values.enumerated() {
+                let offset = 16 + 16 * index + 4 * field
+                withUnsafeBytes(of: UInt32(value).littleEndian) { bytes.replaceSubrange(offset..<offset + 4, with: $0) }
+            }
+            bytes.append(image.jpeg)
+            if let alpha = image.alphaMask { bytes.append(alpha) }
+            align()
+        }
+        return PictureAnimation(data: bytes, checksum: LayoutUSB.crc32(bytes), frameCount: frames.count, durationMS: durationMS)
+    }
+
     func image(at time: TimeInterval, side: Int) -> PictureFrameImage? {
         frames[frameIndex(at: time)].images[side]
     }
@@ -92,6 +122,14 @@ struct PictureAsset: Sendable {
         guard isAnimated else { return 0 }
         let elapsed = max(0, time - startedAt).truncatingRemainder(dividingBy: duration)
         return frames.lastIndex { $0.start <= elapsed } ?? 0
+    }
+
+    func nextFrameTime(after time: TimeInterval) -> TimeInterval {
+        guard isAnimated else { return .infinity }
+        let elapsed = max(0, time - startedAt).truncatingRemainder(dividingBy: duration)
+        let index = frameIndex(at: time)
+        let next = index + 1 < frames.count ? frames[index + 1].start : duration
+        return max(time, startedAt) + max(0.000_001, next - elapsed)
     }
 
     func decodePreview(side: Int, byteLimit: Int) -> [CGImage]? {

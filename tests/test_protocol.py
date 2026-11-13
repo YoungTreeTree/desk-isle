@@ -91,6 +91,13 @@ def main():
     data += pet_packet(14, 95, identity[:-1]) + pet_packet(14, 96, identity, card_id=2)
     data += pet_packet(15, 97, b"\x00") + pet_packet(15, 98, b"", width=512)
     data += pet_packet(14, 29, identity) + pet_packet(15, 30, b"")
+    for i, payload in enumerate((bytes(8), bytes(32 * 1024 + 4), b"", bytes(2), b"", b"")):
+        # Same kinds on the animation channel, wrong ID, and oversized payloads must be ignored.
+        control += pet_packet(16 + i, 200 + i, payload, card_id=0x8008)
+        control += pet_packet(16 + i, 100 + i, payload, card_id=0x8007)
+    for i, payload in enumerate((bytes(8), bytes(32 * 1024 + 4), b"", bytes(1), b"", b"")):
+        control += pet_packet(22 + i, 210 + i, payload, card_id=0x8007)
+        control += pet_packet(22 + i, 110 + i, payload, card_id=0x8100)
     with tempfile.TemporaryDirectory() as temp:
         exe = Path(temp) / "protocol-test"
         subprocess.run(["clang", "-std=c11", "-Wall", "-Wextra", "-Werror",

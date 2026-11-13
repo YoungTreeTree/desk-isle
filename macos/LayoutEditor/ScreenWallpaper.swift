@@ -198,7 +198,7 @@ struct ScreenWallpaper: Sendable {
     }
 }
 
-private struct SavedWallpaper: Codable {
+struct SavedWallpaper: Codable {
     let name: String
     let portrait: Data
     let landscape: Data
@@ -235,7 +235,10 @@ struct WallpaperStore: Sendable {
     }
 
     func importImage(from sourceURL: URL) throws -> ScreenWallpaper {
-        let file = try PictureFile(from: sourceURL)
+        try importImage(PictureFile(from: sourceURL))
+    }
+
+    func importImage(_ file: PictureFile) throws -> ScreenWallpaper {
         guard let source = CGImageSourceCreateWithData(file.data as CFData, nil),
               let type = CGImageSourceGetType(source), UTType(type as String)?.conforms(to: .image) == true,
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [

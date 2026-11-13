@@ -64,6 +64,8 @@ static bool layout_pixels_valid(const desk_layout *layout)
         if (!component.id || !rect.width || !rect.height ||
             rect.x + rect.width > width || rect.y + rect.height > height) return false;
         if (component.id == DESK_PET_ID && !find_pet_preset(rect)) return false;
+        if (component.id == 0x8007 && !(rect.width == 320 && rect.height == 480) &&
+            (rect.x || rect.y || rect.width != width || rect.height != height)) return false;
         for (unsigned j = 0; j < i; ++j) {
             if (layout->components[j].id == component.id) return false;
         }

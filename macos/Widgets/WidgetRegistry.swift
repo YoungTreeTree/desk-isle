@@ -25,7 +25,7 @@ struct WidgetDefinition: Sendable {
         }
         guard component.id == wireID else { return false }
         // A malformed pet must still be treated as a pet so layout validation rejects it.
-        return kind == .pet || acceptsSize(component)
+        return kind == .pet || kind == .model3D || acceptsSize(component)
     }
 
     private func acceptsSize(_ component: Component) -> Bool {
@@ -60,11 +60,11 @@ struct WidgetDefinition: Sendable {
 
 enum WidgetRegistry {
     // Preserve the existing payload dispatch order; menu/settings order is independent.
-    static let all: [WidgetDefinition] = [garmin, codex, bluetooth, macLoad, notifications, pet, pictures]
+    static let all: [WidgetDefinition] = [garmin, codex, bluetooth, macLoad, notifications, pet, pictures, model3D]
     private static let byID = Dictionary(uniqueKeysWithValues: all.compactMap { definition in
         definition.wireID.map { ($0, definition) }
     })
-    static let menu: [BuiltInPlugin] = [.notifications, .codex, .garmin, .bluetooth, .macLoad, .pictures]
+    static let menu: [BuiltInPlugin] = [.notifications, .codex, .garmin, .bluetooth, .macLoad, .pictures, .model3D]
     static func definition(for kind: BuiltInPlugin) -> WidgetDefinition {
         // Every enum case is covered by a registration, checked in the compatibility tests.
         all.first { $0.kind == kind }!

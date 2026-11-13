@@ -19,3 +19,7 @@ void desk_display_hide_component(uint16_t id);
 esp_err_t desk_display_set_layout(desk_layout next);
 esp_err_t desk_display_set_wallpaper(const uint8_t *jpeg, size_t length, unsigned width, unsigned height);
 esp_err_t desk_display_paint_pet(widget_box (*paint)(widget_canvas *, void *), void *context);
+esp_err_t desk_display_paint_model3d(widget_box (*paint)(widget_canvas *, void *), void *context);
+// Successful panel submissions containing a newly rendered 3D frame (not other widget refreshes).
+uint64_t desk_display_present_count(void);
+uint64_t desk_display_model_composition_us(void);

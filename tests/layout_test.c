@@ -130,11 +130,29 @@ static void check_landscape_wallpaper(void)
     }
 }
 
+static void check_model_component(void)
+{
+    for (unsigned rotation = 0; rotation < 4; ++rotation) {
+        desk_layout layout = {.rotation = rotation, .count = 1,
+            .components = {{0x8007, {40, 80, 320, 480}}}};
+        uint8_t payload[DESK_LAYOUT_WIRE_MAX]; desk_layout restored;
+        assert(desk_layout_valid(layout));
+        size_t length = desk_layout_encode(&layout, payload);
+        assert(desk_layout_decode(&restored, payload, length));
+        assert(desk_layout_equal(layout, restored));
+        layout.components[0].rect.width = 280;
+        assert(!desk_layout_valid(layout));
+        layout.components[0].rect = (desk_rect){0, 0, rotation % 2 ? 1280 : 720, rotation % 2 ? 720 : 1280};
+        assert(desk_layout_valid(layout)); // Existing full-screen saves remain loadable.
+    }
+}
+
 int main(void)
 {
     check_saved_layout_migration();
     check_retired_music_migration();
     check_pet_presets();
+    check_model_component();
     check_landscape_wallpaper();
     const desk_rect widget = {30, 43, 153, 81};
     const desk_rect overlay = {60, 60, 71, 33};

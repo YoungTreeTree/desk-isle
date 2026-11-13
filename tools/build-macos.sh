@@ -17,13 +17,14 @@ swift build --package-path "$root" --scratch-path "$root/build/swiftpm" -c relea
 bin="$(swift build --package-path "$root" --scratch-path "$root/build/swiftpm" -c release --show-bin-path)"
 cp "$bin/DeskIsle" "$app/Contents/MacOS/DeskIsle"
 ditto "$bin/Miucs_MiucsCore.bundle" "$app/Contents/Resources/Miucs_MiucsCore.bundle"
+ditto "$bin/DeskIsle_DeskIsle.bundle" "$app/Contents/Resources/DeskIsle_DeskIsle.bundle"
 swiftc -parse-as-library -swift-version 6 -O -target "$(uname -m)-apple-macosx14.0" \
   "$root/helpers/notifications/DeskIsleCLI.swift" "$root/macos/Widgets/Notifications/NotificationEvent.swift" "$root/macos/Widgets/Notifications/NotificationSocket.swift" \
   -o "$app/Contents/Helpers/deskisle"
 cp "$root/resources/wallpaper.jpg" "$root/helpers/garmin/garmin_snapshot.py" "$root/helpers/garmin/garmin_auth.py" "$root/helpers/garmin/garmin_session.py" "$root/helpers/notifications/install-codex-notifications.py" "$app/Contents/Resources/"
 cp "$root/resources/DeskIsle.icns" "$app/Contents/Resources/DeskIsle.icns"
 cp "$font" "$app/Contents/Resources/MiSans-Regular.ttf"
-cp "$root/LICENSE" "$root/THIRD_PARTY_LICENSE_CODEX_USAGE.txt" "$root/THIRD_PARTY_LICENSE_WIDGET_FONT.txt" "$app/Contents/Resources/"
+cp "$root/LICENSE" "$root/THIRD_PARTY_LICENSE_CODEX_USAGE.txt" "$root/THIRD_PARTY_LICENSE_WIDGET_FONT.txt" "$root/THIRD_PARTY_LICENSE_MESHOPTIMIZER.txt" "$app/Contents/Resources/"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

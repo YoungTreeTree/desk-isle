@@ -105,6 +105,31 @@ final class LayoutLibraryTests: XCTestCase {
         return profile
     }
 
+    func testBuiltInModelSelectionSavesDraftAndKeepsDisplayedSnapshot() async throws {
+        defer { cleanup() }
+        let editor=editor(try root())
+        let profile=await seed(editor,scene:try scene(editor.libraryStore))
+        let oldSelection=LayoutSelection(id:profile.id,scene:profile.scene)
+        editor.library.requested=oldSelection;editor.library.displayed=oldSelection
+        editor.chooseModel3D();XCTAssertEqual(editor.resourcePicker?.purpose, .model)
+        XCTAssertNil(editor.draftModelID)
+        await editor.useBuiltInModel3D(.bb8)
+        XCTAssertNil(editor.resourcePicker);XCTAssertFalse(editor.importingModel)
+        let id=try XCTUnwrap(editor.draftModelID)
+        XCTAssertEqual(try editor.libraryStore.model(id).name,"BB8")
+        XCTAssertEqual(editor.draft.model3D?.width,320);XCTAssertEqual(editor.draft.model3D?.height,480)
+        XCTAssertEqual(editor.library.requested,oldSelection);XCTAssertEqual(editor.library.displayed,oldSelection)
+        XCTAssertTrue(editor.flushLayoutSave())
+        XCTAssertEqual(try editor.libraryStore.load().library.layouts.first?.scene.modelID,id)
+        editor.draft.move(Component.model3DID,to:GridPosition(column:2,row:3))
+        editor.draftModelScale=2
+        let component=editor.draft.model3D
+        await editor.useBuiltInModel3D(.bb8)
+        XCTAssertEqual(editor.draftModelID,id, "Reselecting the same model reuses its immutable asset")
+        XCTAssertEqual(editor.draft.model3D,component);XCTAssertEqual(editor.draftModelScale,2)
+        XCTAssertEqual(editor.library.displayed,oldSelection)
+    }
+
     func testLibraryCRUDAndImmutableCopies() async throws {
         defer { cleanup() }
         let editor = editor(try root())
@@ -125,6 +150,32 @@ final class LayoutLibraryTests: XCTestCase {
         await editor.deleteLayout(copy.id)
         XCTAssertEqual(editor.library.layouts.count, 1)
         XCTAssertFalse(editor.library.canDelete(original.id))
+    }
+
+    func testResourceReselectionPreservesDisplayedSceneAndRejectsStalePicker() async throws {
+        defer { cleanup() }
+        let editor = editor(try root())
+        let original = await seed(editor, scene: try scene(editor.libraryStore))
+        let displayed = LayoutSelection(id: original.id, scene: original.scene)
+        editor.library.displayed = displayed
+        let input = editor.libraryStore.root.appendingPathComponent("reusable.jpg")
+        try jpeg(0.8).write(to: input)
+        let pictureID = try editor.libraryStore.storePicture(PictureFile(from: input))
+        let resource = try XCTUnwrap(editor.libraryStore.resources.load().entries.first { $0.assetIDs.contains(pictureID) })
+        try FileManager.default.removeItem(at: input)
+        editor.choosePicture()
+        let request = try XCTUnwrap(editor.resourcePicker)
+        await editor.useResource(resource, for: request)
+        XCTAssertNil(editor.resourcePicker)
+        XCTAssertTrue(editor.draftPictureIDs.values.contains(pictureID))
+        XCTAssertEqual(editor.library.displayed, displayed)
+        XCTAssertNil(editor.library.requested)
+        let count = editor.draft.components.count
+        await editor.createLayout(copying: original.id)
+        await editor.useResource(resource, for: request)
+        XCTAssertEqual(editor.draft.components.count, count)
+        XCTAssertTrue(editor.notice.contains("布局已切换"))
+        XCTAssertEqual(editor.library.displayed, displayed)
     }
 
     func testBackupRecoveryAndUnknownSchemaProtection() throws {
@@ -175,6 +226,34 @@ final class LayoutLibraryTests: XCTestCase {
         XCTAssertEqual(restored.requested?.scene.layout.direction, .portrait)
         XCTAssertEqual(restored.layouts[0].scene.layout.direction, .left)
         XCTAssertFalse(restored.canDelete(first.id))
+    }
+
+    func testReturningToPreviousSceneDuringPendingSkinRestoresItsResources() async throws {
+        defer { cleanup() }
+        let device = LibraryDeviceStub()
+        let editor = editor(try root(), device: device)
+        let first = await seed(editor, scene: try scene(editor.libraryStore, color: 0.1))
+        let next = SavedLayout(name: "pending", scene: try scene(editor.libraryStore, color: 0.9))
+        editor.library.layouts.append(next)
+        let original = LayoutSelection(id: first.id, scene: first.scene)
+        let pending = LayoutSelection(id: next.id, scene: next.scene)
+        // Geometry and wallpaper have reached B, but B's pet has not completed.
+        // The last fully displayed snapshot is still A, with identical geometry.
+        editor.library.displayed = original
+        editor.library.requested = pending
+        editor.pendingPetSelection = pending
+        editor.applied = next.scene.layout
+        editor.deviceReady = true
+        editor.connected = true
+        editor.syncPending = true
+        editor.widgetVersion = 2
+        await editor.requestScene(original)
+        let applications = await device.applications
+        let wallpapers = await device.wallpapers
+        XCTAssertEqual(applications, [first.scene.layout])
+        XCTAssertEqual(wallpapers.count, 1, "A's wallpaper must be resent despite matching geometry")
+        XCTAssertEqual(editor.library.displayed, original)
+        XCTAssertFalse(editor.syncPending)
     }
 
     func testSameComponentIDDifferentAssetsAndAppliedIsolation() async throws {

@@ -116,7 +116,9 @@ struct LayoutPage: View {
                     }
                 }
             }
-            if component.isPet {
+            if component.isModel3D {
+                Model3DSettings(editor:editor)
+            } else if component.isPet {
                 PetComponentSettings(settings: editor.petSettings)
                 Text("占 \(component.footprint.label)，桌宠画面居中")
                     .font(.caption)
@@ -156,6 +158,10 @@ struct LayoutPage: View {
                 }
                 if let message = editor.pictureDisplayNotices[component.id] {
                     Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                if editor.picturePlaysOnBoard(component) {
+                    Label("小屏独立播放", systemImage: "play.circle")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Button(editor.pictures[component.id] == nil ? "选取图片" : "更换图片") {
                     editor.choosePicture(replacing: component.id)

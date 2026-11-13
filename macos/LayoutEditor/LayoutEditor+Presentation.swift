@@ -17,6 +17,11 @@ extension LayoutEditor {
     var notificationDisplayNotice: String? { widgets.notificationDisplayNotice }
     var pictures: [Int: PictureAsset] { pictureRuntime.pictures }
     var pictureDisplayNotices: [Int: String] { pictureRuntime.pictureDisplayNotices }
+    func picturePlaysOnBoard(_ component: Component) -> Bool {
+        pictureRuntime.nativePictures.contains(component.id) &&
+            library.displayed?.scene.pictureIDs[component.id] == editingScene.pictureIDs[component.id] &&
+            applied.components.contains { $0.id == component.id && $0.width == component.width && $0.height == component.height }
+    }
     func startNotifications() { widgets.startNotifications() }
     func stopNotifications() { widgets.stopNotifications() }
     func stopPicturePlayback() { pictureRuntime.stopPicturePlayback() }

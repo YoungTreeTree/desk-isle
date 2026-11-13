@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 enum BuiltInPlugin: String, CaseIterable, Identifiable {
-    case garmin, codex, notifications, pet, macLoad, bluetooth, pictures
+    case garmin, codex, notifications, pet, macLoad, bluetooth, pictures, model3D
     var id: Self { self }
     var title: String { WidgetRegistry.definition(for: self).settingsTitle }
     var symbol: String { WidgetRegistry.definition(for: self).settingsSymbol }

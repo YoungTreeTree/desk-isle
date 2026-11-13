@@ -157,6 +157,10 @@ struct LocalPluginView: View {
                     Text("导入的图片和 GIF 会保存到桌屿。每张图片的尺寸、位置和显示方式可分别在桌面布局中调整。")
                         .font(.callout).foregroundStyle(.secondary)
                     Button("导入图片或 GIF…") { editor.choosePicture(); showLayout() }
+                case .model3D:
+                    Text("选择内置 BB8，或导入自己的 GLB 模型。模型和动画连接后上传到小屏，由开发板绘制，不写入固件。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("选择 3D 模型…") { editor.chooseModel3D(); showLayout() }
                 default: EmptyView()
                 }
                 Button("前往桌面布局") { showLayout() }

@@ -3,7 +3,9 @@ idf_component_register(
          "layout/control.c" "widgets/widget.c" "widgets/widget_paint.c"
          "widgets/mac_load.c" "widgets/codex.c" "widgets/garmin.c" "widgets/bluetooth.c" "widgets/notification.c"
          "pet/pet.c" "pet/pet_scene.c" "../shared/layout.c" "../shared/frosted.c"
-    INCLUDE_DIRS "display" "transport" "layout" "widgets" "pet" "../shared/include"
+         "model3d/scene3d.c" "model3d/model3d.c"
+         "pictures/picture_pack.c" "pictures/picture_player.c"
+    INCLUDE_DIRS "display" "transport" "layout" "widgets" "pet" "model3d" "pictures" "../shared/include"
     REQUIRES esp_lcd esp_driver_gpio esp_driver_ledc esp_hw_support esp_timer esp_psram
              esp_driver_jpeg esp_driver_uart esp_tinyusb nvs_flash esp_rom json
 )

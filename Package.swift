@@ -15,8 +15,10 @@ let package = Package(
     targets: [
         .target(name: "DeskIsleCore", path: "shared", publicHeadersPath: "include"),
         .target(name: "DeskIsleNative", dependencies: ["DeskIsleCore"], path: "macos/Native", publicHeadersPath: "include"),
-        .executableTarget(name: "DeskIsle", dependencies: ["DeskIsleNative", .product(name: "MiucsCore", package: "miucs")],
-                          path: "macos", exclude: ["Native"]),
+        .target(name: "DeskIsleMesh", path: "macos/MeshOptimization", exclude: ["README.md"], publicHeadersPath: "include"),
+        .executableTarget(name: "DeskIsle", dependencies: ["DeskIsleNative", "DeskIsleMesh", .product(name: "MiucsCore", package: "miucs")],
+                          path: "macos", exclude: ["Native", "MeshOptimization"], resources: [.copy("Resources/Model3D")]),
         .testTarget(name: "DeskIsleTests", dependencies: ["DeskIsle"], path: "tests/macos")
-    ]
+    ],
+    cxxLanguageStandard: .cxx17
 )

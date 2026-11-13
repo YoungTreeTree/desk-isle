@@ -38,6 +38,10 @@ struct DeskIsleWindow: View {
             HStack {
                 tabs
                 Spacer()
+                Button { editor.manageResources() } label: {
+                    Label("我的资源", systemImage: "photo.on.rectangle.angled")
+                }
+                .buttonStyle(DeskIsleButtonStyle())
                 ScreenConnectionStatus(editor: editor)
             }
             .padding(.horizontal, 20)
@@ -55,6 +59,7 @@ struct DeskIsleWindow: View {
                                        showLayout: { page = .layout })
             }
         }
+        .background(ResourceLibraryPresenter(editor: editor))
     }
 
     private var tabs: some View {
