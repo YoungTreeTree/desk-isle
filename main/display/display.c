@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 #include "miniz.h"
 #include "jd9365_init_cmds.h"
+#include "picture_player.h"
 #include "display.h"
 #include "layout.h"
 #include "widget.h"
@@ -110,6 +111,7 @@ static esp_err_t present(desk_rect rect)
                                                 rect.y + rect.height, frames[back]);
     if (result != ESP_OK) return result;
     if(model_frame_pending && desk_layout_component(&layout,DESK_MODEL3D_ID)) ++model_present_count;
+    desk_pictures_presented();
     model_frame_pending = false;
     back ^= 1u;
     while (xSemaphoreTake(frame_done, 0) == pdTRUE) {}

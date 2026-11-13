@@ -21,6 +21,7 @@
 #include "display.h"
 #include "pet.h"
 #include "model3d.h"
+#include "picture_player.h"
 #include "protocol.h"
 #include "uart_link.h"
 
@@ -160,6 +161,18 @@ static void reply_layout(const stream_session *session, uint32_t sequence, enum 
         int model_length=snprintf(model,sizeof(model),"DESKISLE_3D 1 %"PRIu32" %u %u %u %"PRIu32"\n",
             sequence,DESK_MAX_MODEL3D_PACK,DESK_MAX_MODEL3D_CHUNK,(unsigned)desk_model3d_pack_size(),desk_model3d_pack_crc());
         if(model_length>0&&model_length<(int)sizeof(model))send_line(session,model,model_length);
+        char pictures[160];
+        int n = snprintf(pictures, sizeof(pictures), "DESKISLE_PICTURES 1 %"PRIu32" %u %u %u %u\n",
+                         sequence, DESK_MAX_PICTURE_PACK, DESK_MAX_PICTURE_CHUNK,
+                         DESK_PICTURE_CACHE_BUDGET, DESK_MAX_PICTURE_FRAMES);
+        if (n > 0 && n < (int)sizeof(pictures)) send_line(session, pictures, n);
+        for (unsigned i = 0; i < layout->count; ++i) {
+            desk_picture_status p = desk_pictures_status(layout->components[i].id, esp_timer_get_time());
+            if (!p.bytes) continue;
+            n = snprintf(pictures, sizeof(pictures), "DESKISLE_PICTURE 1 %"PRIu32" %u %u %"PRIu32" %u %u %u\n",
+                         sequence, p.id, (unsigned)p.bytes, p.crc, p.width, p.height, p.state);
+            if (n > 0 && n < (int)sizeof(pictures)) send_line(session, pictures, n);
+        }
         line[length++] = '\n';
         send_line(session, line, length);
     }
@@ -176,6 +189,7 @@ static void handle_message(const stream_session *session, const desk_message *me
                                                      : desk_control_apply(message->data, message->length);
         }
         desk_model3d_layout(desk_layout_component(desk_control_layout(),DESK_MODEL3D_ID));
+        desk_pictures_layout(desk_control_layout());
         reply_layout(session, message->sequence, status);
         const desk_component *pet = desk_layout_component(desk_control_layout(), DESK_PET_ID);
         if (!pet) {
@@ -211,6 +225,25 @@ static void handle_message(const stream_session *session, const desk_message *me
         }
     } else if (message->kind == DESK_PET_CLEAR) {
         hide_pet();
+    } else if (message->kind >= DESK_PICTURE_BEGIN && message->kind <= DESK_PICTURE_ABORT) {
+        if (!desk_pictures_receive(message, component, esp_timer_get_time())) {
+            status = DESK_ACK_PICTURE;
+            ESP_LOGW(TAG, "Picture command %u rejected for %u", message->kind, message->id);
+        } else if (message->kind == DESK_PICTURE_STATS) {
+            desk_picture_status p = desk_pictures_status(message->id, esp_timer_get_time());
+            char stats[320];
+            int n = snprintf(stats, sizeof(stats), "DESKISLE_PICTURE_STATS 1 %"PRIu32" %u %u %"PRIu32" %u %"PRIu32
+                             " %"PRIu64" %"PRIu64" %"PRIu64" %"PRIu64" %"PRIu64" %u %u %u\n",
+                             message->sequence, p.id, (unsigned)p.bytes, p.crc, p.frame_count, p.duration_ms,
+                             p.decoded, p.presented, p.elapsed_us, p.decode_us, p.max_decode_us, p.state,
+                             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+            if (n > 0 && n < (int)sizeof(stats)) send_line(session, stats, n);
+        } else if (message->kind == DESK_PICTURE_COMMIT) {
+            desk_picture_status p = desk_pictures_status(message->id, esp_timer_get_time());
+            ESP_LOGI(TAG, "PICTURE_READY id=%u frames=%u bytes=%u cache=%u", p.id, p.frame_count,
+                     (unsigned)p.bytes, (unsigned)desk_pictures_memory());
+        }
     } else if (!component) {
         status = DESK_ACK_DIMENSIONS;
     } else if (message->kind>=DESK_MODEL3D_BEGIN&&message->kind<=DESK_MODEL3D_ABORT) {
@@ -259,6 +292,8 @@ static void handle_message(const stream_session *session, const desk_message *me
         desk_frame_data frame;
         esp_err_t result = desk_frame_payload(message, &frame) ? desk_display_frame(message->id, &frame)
                                                               : ESP_ERR_INVALID_SIZE;
+        if (result == ESP_OK && message->id >= DESK_PICTURE_FIRST_ID && message->id <= DESK_PICTURE_LAST_ID)
+            desk_pictures_forget(message->id);
         if (message->id == DESK_PET_ID && (result == ESP_OK || result == ESP_ERR_TIMEOUT)) {
             desk_pet_reset();
             pet_can_resume = false;
@@ -469,6 +504,8 @@ static void scene_task(void *arg)
             next_spec = now + SPEC_INTERVAL_US;
         }
         desk_pet_tick(desk_layout_component(desk_control_layout(), DESK_PET_ID), esp_timer_get_time());
+        const desk_backlight light = desk_control_backlight();
+        desk_pictures_tick(esp_timer_get_time(), !light.blanked && light.brightness && desk_display_frame_ready());
         desk_model3d_tick(desk_layout_component(desk_control_layout(), DESK_MODEL3D_ID), esp_timer_get_time());
         desk_display_tick();
         desk_control_tick();
@@ -526,8 +563,27 @@ static bool start_uart(void)
     return false;
 }
 
+static void *picture_allocate(size_t bytes)
+{
+    const jpeg_decode_memory_alloc_cfg_t config = {.buffer_direction = JPEG_DEC_ALLOC_INPUT_BUFFER};
+    size_t capacity;
+    return jpeg_alloc_decoder_mem(bytes, &config, &capacity);
+}
+static bool picture_validate(const desk_frame_data *frame, unsigned width, unsigned height)
+{
+    jpeg_decode_picture_info_t info;
+    return jpeg_decoder_get_info(frame->jpeg, frame->jpeg_length, &info) == ESP_OK && info.width == width && info.height == height;
+}
+static bool picture_draw(uint16_t id, const desk_frame_data *frame)
+{
+    esp_err_t result = desk_display_frame(id, frame);
+    if (result != ESP_OK) ESP_LOGW(TAG, "Native picture frame %u: %s", id, esp_err_to_name(result));
+    return result == ESP_OK;
+}
+
 static esp_err_t stream_start(void)
 {
+    desk_pictures_init((desk_picture_hooks){picture_allocate, picture_validate, picture_draw, esp_timer_get_time});
     commands = xQueueCreate(COMMAND_CAPACITY, sizeof(queued_message));
     input_space = xSemaphoreCreateCounting(PET_INPUT_SLOTS, PET_INPUT_SLOTS);
     input_storage = heap_caps_malloc(PET_INPUT_SLOTS * DESK_MAX_PET_INPUT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

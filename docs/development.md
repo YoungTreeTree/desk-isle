@@ -47,6 +47,7 @@ python3 tools/send_card.py --port /dev/cu.YOUR_DESKISLE_PORT card.jpg
 swift test
 python3 tests/test_connections.py
 python3 tests/test_protocol.py
+python3 tests/test_pictures.py
 # 以下绘制测试需先载入 ESP-IDF 环境
 python3 tests/test_widgets.py
 clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -I shared/include shared/layout.c tests/layout_test.c -o build/layout-test

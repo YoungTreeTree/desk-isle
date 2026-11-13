@@ -76,6 +76,8 @@ actor LayoutUSB {
     private let widgetFont = WidgetGlyphRasterizer()
     private var wallpaperStatus: WallpaperStatus?
     private var modelStatus: (limit: Int, chunk: Int, size: Int, crc: UInt32)?
+    private var pictureCapabilities: PictureAnimationCapabilities?
+    private var pictureResidencies: [Int: PictureResidency] = [:]
     private var backlight: ScreenBacklight?
     private let widgetLog = Logger(subsystem: "com.deskisle.layout", category: "widgets")
     private let wallpaperLog = Logger(subsystem: "com.deskisle.layout", category: "wallpaper")
@@ -152,7 +154,9 @@ actor LayoutUSB {
             withUnsafeBytes(of: UInt32(jpeg.count).littleEndian) { payload.append(contentsOf: $0) }
         }
         let content = SentContent(kind: kind, width: component.width, height: component.height, data: payload)
-        return try sendContent(content, payload: payload, for: component)
+        let sent = try sendContent(content, payload: payload, for: component)
+        if sent { pictureResidencies.removeValue(forKey: component.id) }
+        return sent
     }
 
     func showWidget<State: WidgetGlyphSource>(_ state: State, for component: Component,
@@ -242,6 +246,97 @@ actor LayoutUSB {
                   let status = UInt8(fields[2]) else { continue }
             return status
         }
+    }
+
+    func supportsPictureAnimation() async throws -> Bool {
+        guard connection != nil else { throw LayoutUSBError.message("等待小屏重新连接后同步 GIF。") }
+        return pictureCapabilities != nil
+    }
+
+    func showPictureAnimation(_ animation: PictureAnimation, for component: Component) async throws {
+        guard component.isPicture, let capability = pictureCapabilities else {
+            throw LayoutUSBError.message("请更新小屏固件以在板端播放 GIF。")
+        }
+        guard animation.data.count <= capability.maxBytes, animation.frameCount <= capability.maxFrames else {
+            throw PictureError.cacheTooLarge
+        }
+        let result = try withControlPort { port -> Bool in
+            func request(_ kind: UInt8, _ payload: Data) throws {
+                try Task.checkCancellation()
+                let (seq, deadline) = try send(port, kind: kind, payload: payload, id: component.id, timeout: 15)
+                guard try readStatus(port, sequence: seq, deadline: deadline) == 0 else {
+                    throw LayoutUSBError.message("板端 GIF 缓存或解码失败，请减少动图尺寸／数量后重试。")
+                }
+            }
+            if let resident = pictureResidencies[component.id], resident.bytes == animation.data.count,
+               resident.checksum == animation.checksum, resident.width == component.width, resident.height == component.height,
+               resident.state != 2 {
+                if resident.state == 1 {
+                    try request(25, Data([0]))
+                    pictureResidencies[component.id] = PictureResidency(bytes: resident.bytes, checksum: resident.checksum,
+                        width: resident.width, height: resident.height, state: 0)
+                }
+                return true
+            }
+            var begin = Data()
+            for value in [UInt32(animation.data.count), animation.checksum] {
+                withUnsafeBytes(of: value.littleEndian) { begin.append(contentsOf: $0) }
+            }
+            do {
+                try request(22, begin)
+                for offset in stride(from: 0, to: animation.data.count, by: capability.chunkBytes) {
+                    var chunk = Data()
+                    withUnsafeBytes(of: UInt32(offset).littleEndian) { chunk.append(contentsOf: $0) }
+                    chunk.append(animation.data.subdata(in: offset..<min(animation.data.count, offset + capability.chunkBytes)))
+                    try request(23, chunk)
+                }
+                try request(24, Data())
+            } catch {
+                if let (seq, deadline) = try? send(port, kind: 27, payload: Data(), id: component.id, timeout: 2) {
+                    _ = try? readStatus(port, sequence: seq, deadline: deadline)
+                }
+                throw error
+            }
+            pictureResidencies[component.id] = PictureResidency(bytes: animation.data.count, checksum: animation.checksum,
+                width: component.width, height: component.height, state: 0)
+            lastUpdates.removeValue(forKey: component.id)
+            return true
+        }
+        guard result == true else { throw LayoutUSBError.message("桌屿已断开。") }
+    }
+
+    func pictureAnimationControl(_ id: Int, action: UInt8) throws {
+        guard Component.pictureIDs.contains(id), action <= 3, pictureCapabilities != nil else {
+            throw LayoutUSBError.message("不支持这项 GIF 控制。")
+        }
+        let status = try withControlPort { port in
+            let (seq, deadline) = try send(port, kind: 25, payload: Data([action]), id: id, timeout: 15)
+            return try readStatus(port, sequence: seq, deadline: deadline)
+        }
+        guard status == 0 else { throw LayoutUSBError.message("无法控制板端 GIF。") }
+        // Re-read residency before deciding whether a subsequent resource needs uploading.
+        pictureResidencies.removeValue(forKey: id)
+    }
+
+    func pictureAnimationStatistics(_ id: Int) throws -> PictureAnimationStats {
+        guard Component.pictureIDs.contains(id), pictureCapabilities != nil else {
+            throw LayoutUSBError.message("固件尚未提供 GIF 性能数据。")
+        }
+        let result = try withControlPort { port -> PictureAnimationStats in
+            let (seq, deadline) = try send(port, kind: 26, payload: Data(), id: id, timeout: 15)
+            var stats: PictureAnimationStats?
+            while true {
+                let line = try port.readLine(deadline: deadline)
+                if let value = PictureAnimationStats(line: line, sequence: seq), value.id == id { stats = value }
+                let fields = line.split(separator: " ")
+                if fields.count == 4, fields[0] == "DESKISLE_ACK", UInt32(fields[1]) == seq {
+                    guard fields[2] == "0", let stats else { throw LayoutUSBError.message("小屏未返回 GIF 性能数据。") }
+                    return stats
+                }
+            }
+        }
+        guard let result else { throw LayoutUSBError.message("桌屿已断开。") }
+        return result
     }
 
     func showModel3D(_ pack: Data,scale: Int) throws {
@@ -337,6 +432,8 @@ actor LayoutUSB {
         }
     }
 
+    func disconnect() { resetConnection() }
+
     private func resetConnection() {
         connection = nil
         petChannel = nil
@@ -346,6 +443,8 @@ actor LayoutUSB {
         glyphPacketLimit = nil
         wallpaperStatus = nil
         modelStatus = nil
+        pictureCapabilities = nil
+        pictureResidencies = [:]
         backlight = nil
     }
 
@@ -366,8 +465,12 @@ actor LayoutUSB {
         var supportsPictureAlpha = false
         var backlight: ScreenBacklight?
         var modelStatus: (limit: Int,chunk: Int,size: Int,crc: UInt32)?
+        var pictureCapabilities: PictureAnimationCapabilities?
+        var pictureResidencies: [Int: PictureResidency] = [:]
         while true {
             let line = try port.readLine(deadline: deadline)
+            if let value = PictureAnimationCapabilities(line: line, sequence: sequence) { pictureCapabilities = value }
+            if let (id, value) = PictureResidency.parse(line, sequence: sequence) { pictureResidencies[id] = value }
             if line == "DESKISLE_WIDGETS 1 \(sequence)" { widgetVersion = max(widgetVersion, 1) }
             if line == "DESKISLE_WIDGETS 2 \(sequence)" { widgetVersion = 2 }
             if line == "DESKISLE_WIDGETS 3 \(sequence)" { widgetVersion = 3 }
@@ -397,6 +500,8 @@ actor LayoutUSB {
                 wallpaperStatus?.supportsLandscape = supportsLandscapeWallpaper
                 self.wallpaperStatus = wallpaperStatus
                 self.modelStatus = modelStatus
+                self.pictureCapabilities = pictureCapabilities
+                self.pictureResidencies = pictureResidencies
                 self.backlight = backlight
                 return reply
             }

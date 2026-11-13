@@ -18,6 +18,7 @@
 | `main/layout` | 固件布局持久化与控制 |
 | `main/widgets` | 组件注册、状态与字形管理，以及各组件独立绘制实现 |
 | `main/pet` | Lua 桌宠运行时及场景绘制 |
+| `main/pictures` | GIF 帧包校验、PSRAM 缓存、板端播放时间轴与资源回收 |
 | `helpers` | 随应用打包运行的通知 CLI、Hook 安装器及佳明 Python 程序 |
 | `resources` | 默认壁纸和板端字形资源，授权边界见根目录 README |
 | `tools` | 开发者使用的构建、烧录、资源生成与运行环境打包工具 |
@@ -28,6 +29,8 @@
 `LayoutEditor` 管理草稿与设备已应用布局，两者保持分离。拖动、尺寸、叠放和方向修改只影响草稿；应用成功后才更新已应用布局。设备轮询和应用流程在 `LayoutEditor+Device`，文件选择与导入在 `LayoutEditor+Assets`，预览视图独立成文件。
 
 `WidgetRuntime` 持有各数据源和通知状态，通过注册表调度组件刷新、编码与发送。每个组件的刷新实现与注册信息放在同一功能目录。`PictureRuntime` 管理图片缓存、加载和动画播放。两个运行管理器通过弱引用读取当前布局上下文，不持有编辑器；编辑器转发实际状态变化供界面观察。关闭预览不停止通知或板端组件，也不会新增预览刷新定时器。
+
+支持板端 GIF 的固件接收一次性帧包后独立循环；Mac 停止该组件的逐帧发送任务，仅在应用资源或设备丢失缓存时上传。旧固件保留兼容路径。缓存、协议及故障恢复见 [图片与板端 GIF](pictures.md)。
 
 布局库通过 `LayoutScene` 保存组件几何、壁纸／图片资源 ID 和桌宠皮肤。`LayoutSelection` 记录请求应用的完整快照，与正在编辑的内容分离；断线重连只恢复该快照。`LayoutLibraryStore` 使用原子清单和上一份有效备份，资产采用不可变 UUID 引用，垃圾回收同时保留当前清单、显示快照和备份中的引用。加载未知版本时停止写入，避免降级破坏数据。
 
@@ -50,6 +53,7 @@
 - `swift test`：配置、会话、组件注册、运行状态隔离，以及 290 组重构前布局结果。
 - `python3 tests/test_connections.py`：通知安装／迁移和佳明中国区认证模拟。
 - `python3 tests/test_protocol.py`：USB／UART 分片、校验、消息边界。
+- `python3 tests/test_pictures.py`：板端 GIF 解析、时间轴、上传中断、替换与内存回收。
 - `python3 tests/test_widgets.py`：需先载入 ESP-IDF 环境，从其中获取 cJSON 源码；比较 100 帧板端绘制基准，启用 ASan／UBSan。
 - `clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -I shared/include shared/layout.c tests/layout_test.c -o build/layout-test && build/layout-test`：共用 C 布局实现。
 - `zsh tools/build-macos.sh`、`idf.py build`：完整应用打包和固件构建。

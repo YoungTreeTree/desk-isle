@@ -16,6 +16,15 @@ extension LayoutUSB: LayoutDevice {}
 
 protocol PictureFrameTransport: Sendable {
     func showFrame(_ jpeg: Data, alphaMask: Data?, for component: Component, maxJPEG: Int) async throws -> Bool
+    func supportsPictureAnimation() async throws -> Bool
+    func showPictureAnimation(_ animation: PictureAnimation, for component: Component) async throws
+}
+
+extension PictureFrameTransport {
+    func supportsPictureAnimation() async -> Bool { false }
+    func showPictureAnimation(_ animation: PictureAnimation, for component: Component) async throws {
+        throw LayoutUSBError.message("小屏固件尚未支持板端 GIF 播放。")
+    }
 }
 
 extension LayoutUSB: PictureFrameTransport {}
