@@ -20,6 +20,7 @@
 #include "control.h"
 #include "display.h"
 #include "pet.h"
+#include "model3d.h"
 #include "protocol.h"
 #include "uart_link.h"
 
@@ -139,21 +140,26 @@ static void reply_layout(const stream_session *session, uint32_t sequence, enum 
                            component->id, rect.x, rect.y, rect.width, rect.height);
     }
     if (length > 0 && length < (int)sizeof(line)) {
-        char capability[320];
+        char capability[384];
         const desk_backlight backlight = desk_control_backlight();
         int capability_length = snprintf(capability, sizeof(capability),
                                          "DESKISLE_WIDGETS 1 %" PRIu32 "\n"
                                          "DESKISLE_WIDGETS 2 %" PRIu32 "\n"
+                                         "DESKISLE_WIDGETS 3 %" PRIu32 "\n"
                                          "DESKISLE_GLYPHS 1 %" PRIu32 " %u\n"
                                          "DESKISLE_WALLPAPER 1 %" PRIu32 " %u %zu %" PRIu32 "\n"
                                          "DESKISLE_WALLPAPER_LANDSCAPE 1 %" PRIu32 "\n"
                                          "DESKISLE_PICTURE_ALPHA 1 %" PRIu32 "\n"
                                          "DESKISLE_BACKLIGHT 1 %" PRIu32 " %u %u\n",
-                                         sequence, sequence, sequence, DESK_MAX_WIDGET_GLYPH_PACKET,
+                                         sequence, sequence, sequence, sequence, DESK_MAX_WIDGET_GLYPH_PACKET,
                                          sequence, DESK_MAX_WALLPAPER_JPEG, wallpaper_length, wallpaper_checksum,
                                          sequence, sequence, sequence, backlight.brightness, backlight.blanked);
         if (capability_length > 0 && capability_length < (int)sizeof(capability))
             send_line(session, capability, capability_length);
+        char model[128];
+        int model_length=snprintf(model,sizeof(model),"DESKISLE_3D 1 %"PRIu32" %u %u %u %"PRIu32"\n",
+            sequence,DESK_MAX_MODEL3D_PACK,DESK_MAX_MODEL3D_CHUNK,(unsigned)desk_model3d_pack_size(),desk_model3d_pack_crc());
+        if(model_length>0&&model_length<(int)sizeof(model))send_line(session,model,model_length);
         line[length++] = '\n';
         send_line(session, line, length);
     }
@@ -169,10 +175,14 @@ static void handle_message(const stream_session *session, const desk_message *me
             status = message->kind == DESK_GET_LAYOUT ? desk_control_status()
                                                      : desk_control_apply(message->data, message->length);
         }
+        desk_model3d_layout(desk_layout_component(desk_control_layout(),DESK_MODEL3D_ID));
         reply_layout(session, message->sequence, status);
         const desk_component *pet = desk_layout_component(desk_control_layout(), DESK_PET_ID);
         if (!pet) {
             hide_pet();
+            // A full-screen 3D scene should not retain an unused 8 MiB pet atlas.
+            // Keep the reservation only for skin changes within a pet layout.
+            desk_pet_release();
         } else if (pet->rect.width != previous_pet.width || pet->rect.height != previous_pet.height) {
             pet_visible = desk_pet_running();
             advertise_pet();
@@ -203,6 +213,15 @@ static void handle_message(const stream_session *session, const desk_message *me
         hide_pet();
     } else if (!component) {
         status = DESK_ACK_DIMENSIONS;
+    } else if (message->kind>=DESK_MODEL3D_BEGIN&&message->kind<=DESK_MODEL3D_ABORT) {
+        esp_err_t result=desk_model3d_receive(message,component);
+        if(result!=ESP_OK){status=DESK_ACK_MODEL3D;ESP_LOGW(TAG,"Model command %u: %s",message->kind,esp_err_to_name(result));}
+        else if(message->kind==DESK_MODEL3D_STATS){
+            char stats[384];int n=desk_model3d_profile(stats,sizeof(stats),message->sequence);
+            if(n>0&&n<(int)sizeof(stats))send_line(session,stats,n);
+            n=desk_model3d_stats(stats,sizeof(stats),message->sequence);
+            if(n>0&&n<(int)sizeof(stats))send_line(session,stats,n);
+        }
     } else if (message->kind == DESK_PET_RESUME) {
         animation_can_resume = true;
         if (desk_pet_receive(message, component) == ESP_OK) {
@@ -450,6 +469,7 @@ static void scene_task(void *arg)
             next_spec = now + SPEC_INTERVAL_US;
         }
         desk_pet_tick(desk_layout_component(desk_control_layout(), DESK_PET_ID), esp_timer_get_time());
+        desk_model3d_tick(desk_layout_component(desk_control_layout(), DESK_MODEL3D_ID), esp_timer_get_time());
         desk_display_tick();
         desk_control_tick();
         if (!uxQueueMessagesWaiting(commands)) ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SCENE_TICK_MS));

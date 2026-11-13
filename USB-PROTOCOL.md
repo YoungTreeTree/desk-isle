@@ -108,3 +108,24 @@ ID `0x8006` 已停用。固件加载旧布局时会移除这个组件并保存�
 载荷为 `{"v":1,"data":{…}}`。通知快照可另外带 `expiresInMs`（0–60000）和 `after`（到期后显示的通知快照）。开发板在本地推进波形、展开和收起，并按到期时间切换。静态卡片在收到新数据或布局变化时重新绘制。
 
 板端组件使用小米 MiSans Regular。常用字按实际字号内置，Mac 按需补发动态文字的字形。内置 GB2312 字库提供缺字时的回退。使用 `python3 tools/make-widget-font.py /path/to/MiSans-Regular.ttf resources/widget_font.bin` 重新生成，字体来源与许可见 [MiSans 声明](THIRD_PARTY_LICENSE_WIDGET_FONT.txt)。
+
+### 运行时 3D 组件
+
+组件 ID `0x8007`，默认占 8×12 格（320×480），可按 40 px 网格定位；兼容已有覆盖整个逻辑屏幕的布局。组件背景使用板端生成的覆盖遮罩透明合成，不新增传输字段。固件同时公告 `DESKISLE_WIDGETS 3 <seq>` 和 `DESKISLE_3D 1 <seq> <max-pack> <max-chunk> <active-bytes> <active-crc32>`。包上限 8 MiB，分块上限 32 KiB。下列消息走布局通道，ID 为 `0x8007`，宽高填 0；USB 与 CH343 使用相同消息。
+
+| 类型 | 载荷与行为 |
+| --- | --- |
+| 16 | 两个小端 u32：包长、整包 CRC-32。分配待上传 PSRAM，保留现有模型。 |
+| 17 | u32 偏移 + 数据；偏移必须等于已接收字节数。 |
+| 18 | 空载荷；检查长度、CRC、模型结构和内存预算，成功后原子替换运行实例。 |
+| 19 | 两个 u8：操作和值。操作 0 暂停/继续（值 1/0）；1 重播并重置统计；2 精度除数（1/2/4）并重播；3 持续挥翅测试（1/0）。 |
+| 20 | 空载荷；先返回性能行，再返回 ACK。 |
+| 21 | 空载荷；放弃未完成上传，释放上传缓存。 |
+
+所有命令沿用 `DESKISLE_ACK`，状态 7 表示模型资源或控制命令被拒绝。成功提交表示模型已就绪，首帧由板端绘制循环生成；不表示上传内容已写 Flash。收到新包之前保留旧画面，未完成上传 30 秒后清理。
+
+性能行为 `DESKISLE_3D_STATS 1 <seq> <render-w> <render-h> <rendered> <presented> <elapsed-us> <render-total-us> <max-us> <mean-us> <triangles> <vertices> <pack-bytes> <renderer-bytes> <free-psram> <largest-psram> <free-internal>`。`presented` 仅计入包含新 3D 帧的成功面板提交。`render-total-us` 为包含调度等待的墙钟绘制耗时。`renderer-bytes` 不含模型包、组件 RGB565 合成表面、透明遮罩及低分辨率时的颜色缓冲。
+
+性能请求还可返回 `DESKISLE_3D_PROFILE 1 <seq> <frames> <animation-us> <clear-us> <vertex-us> <raster-us> <compose-us>`，位于统计行之前。各耗时为本次应用／重播／精度切换以来的累计墙钟微秒；光栅化计时包含该阶段的调度等待，合成计时覆盖包含新模型帧的合成和提交。客户端可忽略该可选行；原有统计行和 ACK 格式不变。
+
+运行包以 `D3M1` 开头，后接小端 u32 版本（1）、补齐到 4 字节的 JSON 长度、二进制区长度，再接 JSON 与二进制区。JSON 保存经过验证的节点、网格、材质、纹理和关键帧表；偏移均相对二进制区。顶点／关键帧为 little-endian float32，索引为 u32，纹理为 RGB565。该包由本机 GLB 导入器生成，不含可执行脚本。具体支持范围见 [3D 组件说明](docs/model3d.md)。

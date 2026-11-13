@@ -25,6 +25,9 @@
 #define DESK_LEASE_MS 3000u
 #define DESK_NATIVE_PET_GRACE_MS 60000u
 #define DESK_BACKLIGHT_MAX 100u
+#define DESK_MODEL3D_ID 0x8007u
+#define DESK_MAX_MODEL3D_PACK (8u * 1024u * 1024u)
+#define DESK_MAX_MODEL3D_CHUNK (32u * 1024u)
 
 typedef enum {
     DESK_FRAME = 1,
@@ -42,6 +45,12 @@ typedef enum {
     DESK_SET_BACKLIGHT = 13,
     DESK_PET_RESUME = 14,
     DESK_PET_CLEAR = 15,
+    DESK_MODEL3D_BEGIN = 16,
+    DESK_MODEL3D_CHUNK = 17,
+    DESK_MODEL3D_COMMIT = 18,
+    DESK_MODEL3D_CONTROL = 19,
+    DESK_MODEL3D_STATS = 20,
+    DESK_MODEL3D_ABORT = 21,
 } desk_message_kind;
 
 typedef enum {
@@ -52,6 +61,7 @@ typedef enum {
     DESK_ACK_WIDGET_DATA = 4,
     DESK_ACK_PET = 5,
     DESK_ACK_PET_MISSING = 6,
+    DESK_ACK_MODEL3D = 7,
 } desk_ack_status;
 
 typedef struct {

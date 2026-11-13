@@ -5,9 +5,10 @@ extension LayoutEditor {
     var editingScene: LayoutScene {
         let used = Set(draft.components.filter(\.isPicture).map(\.id))
         return LayoutScene(layout: draft, wallpaperID: draftWallpaperID,
-                           pictureIDs: draftPictureIDs.filter { used.contains($0.key) }, skinID: petSettings.selectedID)
+                           pictureIDs: draftPictureIDs.filter { used.contains($0.key) }, skinID: petSettings.selectedID,
+                           modelID: draft.model3D == nil ? nil : draftModelID,modelScale:draft.model3D == nil ? nil : draftModelScale)
     }
-    var libraryBusy: Bool { importingPicture || importingWallpaper || migratingLegacy || libraryReadFailed }
+    var libraryBusy: Bool { importingPicture || importingModel || importingWallpaper || migratingLegacy || libraryReadFailed }
 
     func recordDraftChange() {
         guard !restoringScene, !libraryReadFailed else { return }
@@ -63,6 +64,13 @@ extension LayoutEditor {
         library.editingID = profile.id
         draftWallpaperID = profile.scene.wallpaperID
         draftPictureIDs = profile.scene.pictureIDs
+        draftModelID = profile.scene.modelID
+        draftModelScale = profile.scene.modelScale ?? 1
+        modelName = nil
+        modelOptimized = false
+        modelTriangles = nil
+        modelSourceTriangles = nil
+        modelStats = nil
         draft = profile.scene.layout
         petSettings.editSkin(profile.scene.skinID, layoutName: profile.name)
         pictureRuntime.pictures = [:]
@@ -99,6 +107,16 @@ extension LayoutEditor {
             notice = "桌宠皮肤不可用，请重新选择皮肤。"
         }
         loadingLayout = false
+        if let id = profile.scene.modelID {
+            // Read once on selection; do not retain a second live copy of the model or a preview renderer.
+            let details = await Task.detached(priority:.utility) { () -> (String, Bool, Int, Int)? in
+                guard let file=try? store.model(id) else { return nil }
+                return (file.name,file.quality == .smooth,file.triangles,file.sourceTriangles ?? file.triangles)
+            }.value
+            guard generation == editGeneration else { return false }
+            modelName = details?.0; modelOptimized = details?.1 ?? false
+            modelTriangles = details?.2; modelSourceTriangles = details?.3
+        }
         return true
     }
 

@@ -231,7 +231,7 @@ private struct PreviewComponent: View {
                     .frame(width: width, height: height)
                     .accessibilityHidden(true)
             } else {
-                Rectangle().fill(component.isPet ? Color.clear : Color(red: 0.22, green: 0.24, blue: 0.29))
+                Rectangle().fill(component.isPet || component.isModel3D ? Color.clear : Color(red: 0.22, green: 0.24, blue: 0.29))
                 if component.isPet && selected {
                     Rectangle()
                         .strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))

@@ -44,7 +44,7 @@ final class WidgetRegistryTests: XCTestCase {
         XCTAssertEqual(WidgetRegistry.all.count, BuiltInPlugin.allCases.count)
         let ids = WidgetRegistry.all.compactMap(\.wireID)
         XCTAssertEqual(ids.count, Set(ids).count)
-        XCTAssertEqual(Set(ids), [1, 0x8001, 0x8002, 0x8003, 0x8004, 0x8005])
+        XCTAssertEqual(Set(ids), [1, 0x8001, 0x8002, 0x8003, 0x8004, 0x8005, 0x8007])
         XCTAssertEqual(WidgetRegistry.all.filter { $0.refresh != nil }.map(\.kind), [.garmin, .codex, .bluetooth, .macLoad])
         XCTAssertEqual(WidgetRegistry.all.filter { $0.display != nil }.map(\.kind), [.garmin, .codex, .bluetooth, .macLoad])
     }

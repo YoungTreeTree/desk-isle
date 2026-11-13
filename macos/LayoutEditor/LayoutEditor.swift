@@ -17,6 +17,13 @@ final class LayoutEditor: ObservableObject {
     @Published var importingWallpaper = false
     @Published var wallpaperNotice: String?
     @Published var importingPicture = false
+    @Published var importingModel = false
+    @Published var showingModelLibrary = false
+    @Published var modelName: String?
+    @Published var modelOptimized = false
+    @Published var modelTriangles: Int?
+    @Published var modelSourceTriangles: Int?
+    @Published var modelStats: Model3DStats?
     @Published var library = LayoutLibrary()
     @Published var showingLibrary = true
     @Published var libraryError: String?
@@ -27,6 +34,8 @@ final class LayoutEditor: ObservableObject {
     let device: any LayoutDevice
     var draftWallpaperID: UUID?
     var draftPictureIDs: [Int: UUID] = [:]
+    var draftModelID: UUID?
+    var draftModelScale = 1
     var appliedWallpaper = ScreenWallpaper.bundled
     var restoringScene = false
     var libraryReadFailed = false
@@ -98,7 +107,7 @@ final class LayoutEditor: ObservableObject {
         return !draft.components.contains { $0.id == definition.wireID }
     }
     var canAddPicture: Bool { canAdd(.pictures) }
-    var canApply: Bool { !applying && !importingPicture && !importingWallpaper && !loadingLayout && !libraryReadFailed && draft.isValid && (hasChanges || unsaved || syncPending) }
+    var canApply: Bool { !applying && !importingPicture && !importingModel && !importingWallpaper && !loadingLayout && !libraryReadFailed && draft.isValid && (hasChanges || unsaved || syncPending) }
 
     func changeDirection(_ direction: ScreenDirection) {
         if draft.changeDirection(to: direction) {
@@ -134,6 +143,7 @@ final class LayoutEditor: ObservableObject {
     func add(_ kind: BuiltInPlugin) {
         guard canAdd(kind) else { return }
         if kind == .pictures { choosePicture(); return }
+        if kind == .model3D { chooseModel3D(); return }
         let definition = WidgetRegistry.definition(for: kind)
         guard let component = definition.makeComponent(in: draft) else { return }
         draft.components.append(component)

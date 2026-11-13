@@ -5,6 +5,8 @@ struct LayoutScene: Codable, Equatable, Sendable {
     var wallpaperID: UUID?
     var pictureIDs: [Int: UUID] = [:]
     var skinID: String
+    var modelID: UUID?
+    var modelScale: Int?
 }
 
 struct SavedLayout: Codable, Equatable, Identifiable, Sendable {
@@ -63,7 +65,7 @@ struct LayoutLibraryStore: Sendable {
             let panel = scene.layout.panel
             guard (512...4096).contains(panel.nativeWidth), (512...4096).contains(panel.nativeHeight),
                   (1...64).contains(panel.maxComponents), panel.maxPixels > 0, panel.maxJPEG > 0 else { return false }
-            return scene.layout.isValid
+            return scene.layout.isValid && [1,2,4].contains(scene.modelScale ?? 1)
         }
         let ids = Set(result.layouts.map(\.id))
         guard ids.count == result.layouts.count,
@@ -126,6 +128,14 @@ struct LayoutLibraryStore: Sendable {
         try PropertyListDecoder().decode(PictureFile.self, from: Data(contentsOf: assetURL(id)))
     }
 
+    func model(_ id: UUID) throws -> Model3DFile {
+        try PropertyListDecoder().decode(Model3DFile.self,from:Data(contentsOf:assetURL(id)))
+    }
+    func storeModel(_ file: Model3DFile) throws -> UUID {
+        let encoder=PropertyListEncoder();encoder.outputFormat = .binary
+        return try storeAsset(encoder.encode(file))
+    }
+
     func wallpaper(_ id: UUID?) throws -> ScreenWallpaper {
         guard let id else { return .bundled }
         return try WallpaperStore(url: assetURL(id)).loadRequired()
@@ -138,6 +148,11 @@ struct LayoutLibraryStore: Sendable {
     }
 
     func validateReferences(_ scene: LayoutScene) throws {
+        if scene.layout.model3D != nil {
+            guard let id=scene.modelID, FileManager.default.fileExists(atPath:assetURL(id).path) else {
+                throw LayoutLibraryError.message("3D 模型缺失，请重新选取 GLB 文件。")
+            }
+        }
         if let id = scene.wallpaperID, !FileManager.default.fileExists(atPath: assetURL(id).path) {
             throw LayoutLibraryError.message("壁纸文件缺失，请更换壁纸。")
         }
@@ -158,7 +173,13 @@ struct LayoutLibraryStore: Sendable {
             do { pictures[component.id] = try PictureAsset.prepare(picture(id)) }
             catch { throw LayoutLibraryError.message("无法读取图片组件的文件，请更换图片。") }
         }
-        return PreparedLayoutScene(wallpaper: wallpaper, pictures: pictures)
+        let model: Model3DFile?
+        if scene.layout.model3D != nil {
+            guard let id=scene.modelID else { throw LayoutLibraryError.message("3D 模型缺失，请重新选取。") }
+            do { model = try self.model(id) }
+            catch { throw LayoutLibraryError.message("3D 模型文件损坏，请重新选取。") }
+        } else { model=nil }
+        return PreparedLayoutScene(wallpaper: wallpaper, pictures: pictures, model:model)
     }
 
     // Keep references from both the current manifest and its recoverable backup.
@@ -167,7 +188,7 @@ struct LayoutLibraryStore: Sendable {
         if let bytes = try? Data(contentsOf: backup), let old = try? decode(bytes) {
             scenes += old.layouts.map(\.scene) + [old.requested?.scene, old.displayed?.scene].compactMap { $0 }
         }
-        let used = Set(scenes.flatMap { Array($0.pictureIDs.values) + [$0.wallpaperID].compactMap { $0 } })
+        let used = Set(scenes.flatMap { Array($0.pictureIDs.values) + [$0.wallpaperID,$0.modelID].compactMap { $0 } })
         let directory = root.appendingPathComponent("Assets")
         for url in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] {
             if let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent), !used.contains(id) {
@@ -180,4 +201,5 @@ struct LayoutLibraryStore: Sendable {
 struct PreparedLayoutScene: Sendable {
     let wallpaper: ScreenWallpaper
     let pictures: [Int: PictureAsset]
+    var model: Model3DFile? = nil
 }

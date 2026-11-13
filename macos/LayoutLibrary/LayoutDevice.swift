@@ -5,6 +5,11 @@ protocol LayoutDevice: Sendable {
     func readLayout() async throws -> LayoutReply?
     func apply(_ layout: ScreenLayout) async throws -> LayoutReply
     func showWallpaper(_ image: WallpaperFrame, for panel: Panel) async throws -> Bool
+    func showModel3D(_ pack: Data, scale: Int) async throws
+}
+
+extension LayoutDevice {
+    func showModel3D(_ pack: Data,scale: Int) async throws { throw LayoutLibraryError.message("设备不支持 3D 模型。") }
 }
 
 extension LayoutUSB: LayoutDevice {}

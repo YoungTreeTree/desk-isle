@@ -55,6 +55,7 @@ struct DeskIsleWindow: View {
                                        showLayout: { page = .layout })
             }
         }
+        .background(Model3DLibraryPresenter(editor: editor))
     }
 
     private var tabs: some View {

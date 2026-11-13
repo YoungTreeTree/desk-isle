@@ -74,6 +74,7 @@ struct Component: Identifiable, Equatable, Codable, Sendable {
     static let bluetoothID = 0x8004
     static let macLoadID = 0x8005
     static let retiredMusicID = 0x8006
+    static let model3DID = 0x8007
     static let pictureIDs = 0x8100...0x81FF
 
     let id: Int
@@ -85,6 +86,7 @@ struct Component: Identifiable, Equatable, Codable, Sendable {
 
     var definition: WidgetDefinition? { WidgetRegistry.definition(for: self) }
     var isPet: Bool { id == 1 }
+    var isModel3D: Bool { id == Self.model3DID }
     var isGarmin: Bool { definition?.kind == .garmin }
     var isCodex: Bool { definition?.kind == .codex }
     var isNotifications: Bool { definition?.kind == .notifications }
@@ -164,6 +166,7 @@ struct ScreenLayout: Equatable, Codable, Sendable {
     var notifications: Component? { components.first(where: \.isNotifications) }
     var bluetooth: Component? { components.first(where: \.isBluetooth) }
     var macLoad: Component? { components.first(where: \.isMacLoad) }
+    var model3D: Component? { components.first(where: \.isModel3D) }
 
     func firstFreePosition(for size: GridSize) -> GridPosition? {
         guard grid.contains(size) else { return nil }
@@ -193,6 +196,11 @@ struct ScreenLayout: Equatable, Codable, Sendable {
                   (1...width).contains(component.width), (1...height).contains(component.height),
                   component.x <= width - component.width, component.y <= height - component.height else { return false }
             if component.isPet && component.petPreset == nil { return false }
+            if component.isModel3D {
+                let compact = component.width == 320 && component.height == 480
+                let legacyFullScreen = component.x == 0 && component.y == 0 && component.width == width && component.height == height
+                if !compact && !legacyFullScreen { return false }
+            }
             pixels += component.jpegPixels
         }
         return pixels <= panel.maxPixels
@@ -268,7 +276,8 @@ struct ScreenLayout: Equatable, Codable, Sendable {
         for index in components.indices {
             let component = components[index]
             let previousSize = component.footprint
-            let size = component.isNotifications ? newGrid.notificationFootprint ?? previousSize : previousSize
+            let legacyFullScreenModel = component.isModel3D && previousSize == oldGrid
+            let size = legacyFullScreenModel ? newGrid : component.isNotifications ? newGrid.notificationFootprint ?? previousSize : previousSize
             guard newGrid.contains(size) else { return false }
             let columnRoom = oldGrid.columns - previousSize.columns
             let columnFraction = (component.isPet || component.isNotifications) && columnRoom == 0
@@ -359,8 +368,9 @@ struct LayoutReply: Sendable {
     let layout: ScreenLayout
     let backlight: ScreenBacklight?
     let widgetVersion: Int
+    let modelResident: Bool
 
-    init?(line: String, sequence: UInt32, backlight: ScreenBacklight? = nil, widgetVersion: Int = 0) {
+    init?(line: String, sequence: UInt32, backlight: ScreenBacklight? = nil, widgetVersion: Int = 0, modelResident: Bool = false) {
         let fields = line.split(separator: " ")
         guard fields.count >= 11, fields[0] == "DESKISLE_LAYOUT", fields[1] == "1",
               UInt32(fields[2]) == sequence else { return nil }
@@ -382,5 +392,6 @@ struct LayoutReply: Sendable {
         self.layout = layout
         self.backlight = backlight
         self.widgetVersion = widgetVersion
+        self.modelResident = modelResident
     }
 }

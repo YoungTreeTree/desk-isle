@@ -17,6 +17,7 @@ typedef struct {
     unsigned pet_messages;
     unsigned pet_recovery_messages;
     unsigned backlight_commands;
+    unsigned model_commands;
 } results;
 
 static uint8_t alpha[DESK_MAX_PET_PIXELS];
@@ -24,6 +25,12 @@ static uint8_t alpha[DESK_MAX_PET_PIXELS];
 static void received(void *context, const desk_message *message)
 {
     results *counts = context;
+    if(message->kind>=DESK_MODEL3D_BEGIN&&message->kind<=DESK_MODEL3D_ABORT){
+        assert(message->id==DESK_MODEL3D_ID&&message->width==0&&message->height==0&&message->checksum_ok);
+        assert(message->sequence==100+counts->model_commands);
+        assert(message->kind==DESK_MODEL3D_BEGIN+counts->model_commands);
+        ++counts->model_commands;return;
+    }
     if (message->kind == DESK_SET_BACKLIGHT) {
         assert(message->id == 0 && message->width == 0 && message->height == 0 && message->length == 2);
         assert(message->sequence == 27 + counts->backlight_commands);
@@ -200,6 +207,7 @@ int main(int argc, char **argv)
                counts.alpha_frames == 4 && counts.widget_updates == 0 && counts.glyph_updates == 0 && counts.wallpapers == 0 &&
                counts.picture_alpha_frames == 0 && counts.pet_messages == 4 && counts.backlight_commands == 0);
         assert(counts.pet_recovery_messages == 2);
+        assert(counts.model_commands == 0);
         assert(parser.payload_size == 0);
 
         desk_parser_reset(&parser);
@@ -212,6 +220,7 @@ int main(int argc, char **argv)
             offset += count;
         }
         assert(counts.widget_updates == 1 && counts.glyph_updates == 1 && counts.wallpapers == 2);
+        assert(counts.model_commands == 6);
         assert(counts.picture_alpha_frames == 2 && counts.alpha_frames == 4 && counts.pet_messages == 4 &&
                counts.pet_recovery_messages == 2 &&
                counts.backlight_commands == 2);

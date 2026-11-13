@@ -62,6 +62,9 @@ typedef struct {
 
 static dirty_regions dirty[2];
 static bool render_requested;
+static uint64_t model_present_count;
+static uint64_t model_composition_us;
+static bool model_frame_pending;
 
 typedef struct {
     uint16_t id, width, height;
@@ -106,6 +109,8 @@ static esp_err_t present(desk_rect rect)
     esp_err_t result = esp_lcd_panel_draw_bitmap(panel, 0, rect.y, DESK_LCD_WIDTH,
                                                 rect.y + rect.height, frames[back]);
     if (result != ESP_OK) return result;
+    if(model_frame_pending && desk_layout_component(&layout,DESK_MODEL3D_ID)) ++model_present_count;
+    model_frame_pending = false;
     back ^= 1u;
     while (xSemaphoreTake(frame_done, 0) == pdTRUE) {}
 #if CONFIG_ESP_MAIN_TASK_AFFINITY == DESK_DISPLAY_CORE
@@ -341,7 +346,7 @@ static void compose(uint16_t *frame, desk_rect rect)
     for (unsigned i = layout.count; i > 0; --i) {
         const desk_component *component = &layout.components[i - 1];
         const component_pixels *surface = surface_for(component);
-        if ((!surface && component->id == DESK_PET_ID) || (surface && surface->alpha)) continue;
+        if ((!surface && (component->id == DESK_PET_ID || component->id == DESK_MODEL3D_ID)) || (surface && surface->alpha)) continue;
         if (covers(desk_layout_native_rect(component->rect, layout.rotation), rect)) {
             draw_wallpaper = false;
             first = i - 1;
@@ -359,7 +364,7 @@ static void compose(uint16_t *frame, desk_rect rect)
     for (unsigned i = first; i < layout.count; ++i) {
         const desk_component *component = &layout.components[i];
         const component_pixels *surface = surface_for(component);
-        if (!surface && component->id == DESK_PET_ID) continue;
+        if (!surface && (component->id == DESK_PET_ID || component->id == DESK_MODEL3D_ID)) continue;
         desk_layout_draw_component(frame, surface ? surface->pixels : NULL, surface ? surface->alpha : NULL,
                                    component->rect, layout.rotation, rect);
     }
@@ -370,6 +375,8 @@ static esp_err_t render(void)
     DISPLAY_TRY(prepare_widgets());
     dirty_regions *regions = &dirty[back];
     if (!render_requested || !regions->count) return ESP_OK;
+    const bool model_frame=model_frame_pending;
+    const int64_t composition_started=esp_timer_get_time();
     desk_rect flush = {0};
     for (unsigned i = 0; i < regions->count; ++i) {
         desk_rect rect = regions->rects[i];
@@ -377,6 +384,7 @@ static esp_err_t render(void)
         flush = desk_rect_union(flush, rect);
     }
     DISPLAY_TRY(present(flush));
+    if(model_frame) model_composition_us+=esp_timer_get_time()-composition_started;
     regions->count = 0;
     render_requested = false;
     return ESP_OK;
@@ -663,6 +671,38 @@ esp_err_t desk_display_paint_pet(widget_box (*paint)(widget_canvas *, void *), v
     widget_box changed = paint(&canvas, context);
     if (!changed.width || !changed.height) return ESP_OK;
     mark_dirty((desk_rect){rect.x + changed.x, rect.y + changed.y, changed.width, changed.height});
+    return ESP_OK;
+}
+
+uint64_t desk_display_present_count(void) { return model_present_count; }
+uint64_t desk_display_model_composition_us(void) { return model_composition_us; }
+
+esp_err_t desk_display_paint_model3d(widget_box (*paint)(widget_canvas *, void *), void *context)
+{
+    const desk_component *component = desk_layout_component(&layout, DESK_MODEL3D_ID);
+    if (!component) return ESP_ERR_NOT_FOUND;
+    component_pixels *surface = find_surface(DESK_MODEL3D_ID);
+    if (!surface) surface = find_surface(0);
+    if (!surface) return ESP_ERR_NO_MEM;
+    const desk_rect rect = component->rect;
+    unsigned stride = desk_jpeg_dimension(rect.width);
+    size_t count = (size_t)stride * rect.height, bytes = count * 2;
+    if (surface->capacity < bytes || surface->alpha_capacity < count) {
+        const jpeg_decode_memory_alloc_cfg_t output = {.buffer_direction = JPEG_DEC_ALLOC_OUTPUT_BUFFER};
+        size_t capacity;
+        uint16_t *pixels = jpeg_alloc_decoder_mem(bytes, &output, &capacity);
+        uint8_t *alpha = heap_caps_calloc(count, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!pixels || !alpha) { free(pixels); free(alpha); return ESP_ERR_NO_MEM; }
+        release_surface(surface);
+        *surface = (component_pixels){.pixels = pixels, .capacity = capacity, .alpha = alpha, .alpha_capacity = count};
+    }
+    surface->id = DESK_MODEL3D_ID; surface->width = rect.width; surface->height = rect.height;
+    widget_canvas canvas = {.pixels=surface->pixels,.alpha=surface->alpha,.stride=stride,.width=rect.width,.height=rect.height,
+                            .clip={0,0,rect.width,rect.height}};
+    widget_box changed = paint(&canvas,context);
+    if (!changed.width || !changed.height) return ESP_OK;
+    model_frame_pending = true;
+    mark_dirty((desk_rect){rect.x+changed.x,rect.y+changed.y,changed.width,changed.height});
     return ESP_OK;
 }
 

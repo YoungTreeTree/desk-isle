@@ -175,9 +175,16 @@ void desk_parser_feed(desk_parser *parser, const uint8_t *data, size_t size)
                           (header[5] == DESK_PET_INPUT && length >= 2 && length <= DESK_MAX_PET_INPUT) ||
                           (header[5] == DESK_PET_RESUME && length == 8) ||
                           (header[5] == DESK_PET_CLEAR && length == 0));
+        bool valid_model = parser->controls && id == DESK_MODEL3D_ID && dimensions == 0 &&
+                          ((header[5] == DESK_MODEL3D_BEGIN && length == 8) ||
+                           (header[5] == DESK_MODEL3D_CHUNK && length > 4 && length <= 4 + DESK_MAX_MODEL3D_CHUNK) ||
+                           (header[5] == DESK_MODEL3D_COMMIT && length == 0) ||
+                           (header[5] == DESK_MODEL3D_CONTROL && length == 2) ||
+                           (header[5] == DESK_MODEL3D_STATS && length == 0) ||
+                           (header[5] == DESK_MODEL3D_ABORT && length == 0));
         if (memcmp(header, "ISLE", 4) == 0 && header[4] == DESK_PROTOCOL_VERSION &&
             length <= parser->payload_capacity &&
-            (valid_frame || valid_alpha || valid_keepalive || valid_settings || valid_widget || valid_wallpaper || valid_pet)) {
+            (valid_frame || valid_alpha || valid_keepalive || valid_settings || valid_widget || valid_wallpaper || valid_pet || valid_model)) {
             parser->payload_size = length;
             if (length == 0) deliver(parser);
         } else {

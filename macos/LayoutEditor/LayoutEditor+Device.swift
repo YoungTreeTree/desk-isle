@@ -26,7 +26,7 @@ extension LayoutEditor {
             unsaved = reply.status == 3
             try await migrateLegacyLayout(reply.layout)
             guard start == revision, !Task.isCancelled, !libraryReadFailed else { return }
-            let deviceChanged = applied != reply.layout
+            let deviceChanged = applied != reply.layout || (deviceReady && reply.layout.model3D != nil && !reply.modelResident)
             applied = reply.layout
             if reconnected || deviceChanged || restoreRequested {
                 restoreRequested = false
@@ -70,6 +70,10 @@ extension LayoutEditor {
         let previous = library.requested
         library.requested = selection
         guard flushLayoutSave() else { library.requested = previous; return }
+        // The previous request may have changed device resources while still waiting
+        // for its pet skin. A historical displayed snapshot cannot prove that a
+        // newly selected scene is still on the board, even with identical geometry.
+        if previous != selection { deviceReady = false }
         pendingPetSelection = nil
         scenePreparation?.cancel()
         syncGeneration += 1
@@ -109,7 +113,8 @@ extension LayoutEditor {
                 try store.validateReferences(selection.scene)
                 let petReady = !selection.scene.layout.components.contains(where: \.isPet) || !petSettings.enabled ||
                     (petSettings.nativeActive && petSettings.activeSkinID == selection.scene.skinID)
-                if deviceReady, library.displayed?.scene == selection.scene, !unsaved, petReady {
+                if deviceReady, applied == selection.scene.layout,
+                   library.displayed?.scene == selection.scene, !unsaved, petReady {
                     library.displayed = selection
                     syncPending = false
                     notice = "已应用到小屏"
@@ -127,7 +132,7 @@ extension LayoutEditor {
                     }
                 }
                 let prepared: PreparedLayoutScene
-                if !loadingLayout, let cached = preparedEditingScene,
+                if selection.scene.layout.model3D == nil, !loadingLayout, let cached = preparedEditingScene,
                    cached.wallpaperID == selection.scene.wallpaperID,
                    cached.pictureIDs == selection.scene.pictureIDs,
                    editingScene.wallpaperID == cached.wallpaperID,
@@ -172,6 +177,12 @@ extension LayoutEditor {
                 if generation != syncGeneration { continue }
                 await pictureRuntime.displayAllPictures(in: reply.layout)
                 if generation != syncGeneration { continue }
+                if let model=prepared.model {
+                    modelStats=nil
+                    notice="正在上传 3D 模型…"
+                    try await device.showModel3D(model.pack,scale:selection.scene.modelScale ?? 1)
+                    if generation != syncGeneration { continue }
+                }
                 if !pictureRuntime.pictureDisplayNotices.isEmpty {
                     throw LayoutLibraryError.message("图片尚未完全同步，请重试。")
                 }

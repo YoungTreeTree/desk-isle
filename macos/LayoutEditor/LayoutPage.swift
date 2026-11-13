@@ -116,7 +116,9 @@ struct LayoutPage: View {
                     }
                 }
             }
-            if component.isPet {
+            if component.isModel3D {
+                Model3DSettings(editor:editor)
+            } else if component.isPet {
                 PetComponentSettings(settings: editor.petSettings)
                 Text("占 \(component.footprint.label)，桌宠画面居中")
                     .font(.caption)

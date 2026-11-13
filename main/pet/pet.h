@@ -8,3 +8,5 @@ void desk_pet_tick(const desk_component *component, int64_t now);
 bool desk_pet_running(void);
 void desk_pet_idle_input(void);
 void desk_pet_reset(void);
+// Release the atlas reservation when a layout no longer contains a pet.
+void desk_pet_release(void);

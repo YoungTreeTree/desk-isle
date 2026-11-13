@@ -75,6 +75,7 @@ actor LayoutUSB {
     private var glyphPacketLimit: Int?
     private let widgetFont = WidgetGlyphRasterizer()
     private var wallpaperStatus: WallpaperStatus?
+    private var modelStatus: (limit: Int, chunk: Int, size: Int, crc: UInt32)?
     private var backlight: ScreenBacklight?
     private let widgetLog = Logger(subsystem: "com.deskisle.layout", category: "widgets")
     private let wallpaperLog = Logger(subsystem: "com.deskisle.layout", category: "wallpaper")
@@ -112,6 +113,7 @@ actor LayoutUSB {
             if current.widgetVersion < 2, layout.macLoad != nil {
                 throw LayoutUSBError.message("请更新小屏固件以显示 Mac 负载。")
             }
+            if layout.model3D != nil, modelStatus == nil { throw LayoutUSBError.message("请更新小屏固件以显示 3D 模型。") }
             let reply = try exchange(port, kind: 4, payload: layout.encoded())
             checkLastUpdates(in: reply.layout)
             return reply
@@ -242,6 +244,68 @@ actor LayoutUSB {
         }
     }
 
+    func showModel3D(_ pack: Data,scale: Int) throws {
+        guard let capability=modelStatus,pack.count >= 20,pack.count <= capability.limit,[1,2,4].contains(scale) else {
+            throw LayoutUSBError.message("模型超出支持范围，或小屏尚未支持 3D。")
+        }
+        let checksum=Self.crc32(pack)
+        let sent = try withControlPort { port -> Bool in
+            func request(_ kind: UInt8,_ payload: Data) throws {
+                if Task.isCancelled { throw CancellationError() }
+                let (sequence,deadline)=try send(port,kind:kind,payload:payload,id:Component.model3DID,timeout:15)
+                guard try readStatus(port,sequence:sequence,deadline:deadline)==0 else { throw LayoutUSBError.message("小屏未能接收 3D 模型，请检查资源或重试。") }
+            }
+            if capability.size != pack.count || capability.crc != checksum {
+                var begin=Data()
+                for v in [UInt32(pack.count),checksum] { withUnsafeBytes(of:v.littleEndian){ begin.append(contentsOf:$0) } }
+                do {
+                    try request(16,begin)
+                    for offset in stride(from:0,to:pack.count,by:capability.chunk) {
+                        var chunk=Data();withUnsafeBytes(of:UInt32(offset).littleEndian){chunk.append(contentsOf:$0)}
+                        chunk.append(pack.subdata(in:offset..<min(pack.count,offset+capability.chunk)))
+                        try request(17,chunk)
+                    }
+                    try request(18,Data())
+                    modelStatus=(capability.limit,capability.chunk,pack.count,checksum)
+                } catch {
+                    // Best-effort release of partial PSRAM uploads. The board also has a 30 s timeout.
+                    if let (seq,deadline)=try? send(port,kind:21,payload:Data(),id:Component.model3DID,timeout:2) {
+                        _ = try? readStatus(port,sequence:seq,deadline:deadline)
+                    }
+                    throw error
+                }
+            }
+            try request(19,Data([2,UInt8(scale)]))
+            return true
+        }
+        guard sent == true else { throw LayoutUSBError.message("桌屿已断开。") }
+    }
+
+    func model3DControl(_ action: UInt8,value: UInt8 = 0) throws {
+        let status=try withControlPort { port in
+            let (seq,deadline)=try send(port,kind:19,payload:Data([action,value]),id:Component.model3DID,timeout:15)
+            return try readStatus(port,sequence:seq,deadline:deadline)
+        }
+        guard status == 0 else { throw LayoutUSBError.message("无法控制小屏 3D 动画。") }
+    }
+
+    func model3DStatistics() throws -> Model3DStats {
+        let result=try withControlPort { port -> Model3DStats in
+            let (seq,deadline)=try send(port,kind:20,payload:Data(),id:Component.model3DID,timeout:15)
+            var stats: Model3DStats?
+            while true {
+                let line=try port.readLine(deadline:deadline)
+                if let value=Model3DStats(line:line,sequence:seq){stats=value}
+                let f=line.split(separator:" ")
+                if f.count==4,f[0]=="DESKISLE_ACK",UInt32(f[1])==seq {
+                    guard f[2]=="0",let stats else { throw LayoutUSBError.message("小屏未返回 3D 性能数据。") }
+                    return stats
+                }
+            }
+        }
+        guard let result else { throw LayoutUSBError.message("桌屿已断开。") };return result
+    }
+
     private func withControlPort<Result>(discover: Bool = false,
                                          _ use: (SerialPort) throws -> Result) throws -> Result? {
         do {
@@ -281,6 +345,7 @@ actor LayoutUSB {
         supportsPictureAlpha = false
         glyphPacketLimit = nil
         wallpaperStatus = nil
+        modelStatus = nil
         backlight = nil
     }
 
@@ -300,10 +365,19 @@ actor LayoutUSB {
         var supportsLandscapeWallpaper = false
         var supportsPictureAlpha = false
         var backlight: ScreenBacklight?
+        var modelStatus: (limit: Int,chunk: Int,size: Int,crc: UInt32)?
         while true {
             let line = try port.readLine(deadline: deadline)
             if line == "DESKISLE_WIDGETS 1 \(sequence)" { widgetVersion = max(widgetVersion, 1) }
             if line == "DESKISLE_WIDGETS 2 \(sequence)" { widgetVersion = 2 }
+            if line == "DESKISLE_WIDGETS 3 \(sequence)" { widgetVersion = 3 }
+            if line.hasPrefix("DESKISLE_3D ") {
+                let f=line.split(separator:" ")
+                if f.count==7,f[1]=="1",UInt32(f[2])==sequence,let limit=Int(f[3]),(20...Model3DImporter.maxPack).contains(limit),
+                   let chunk=Int(f[4]),(256...32768).contains(chunk),let size=Int(f[5]),(0...limit).contains(size),let crc=UInt32(f[6]) {
+                    modelStatus=(limit,chunk,size,crc)
+                }
+            }
             if line.hasPrefix("DESKISLE_GLYPHS ") {
                 let fields = line.split(separator: " ")
                 if fields.count == 4, fields[1] == "1", UInt32(fields[2]) == sequence,
@@ -315,12 +389,14 @@ actor LayoutUSB {
             if line == "DESKISLE_WALLPAPER_LANDSCAPE 1 \(sequence)" { supportsLandscapeWallpaper = true }
             if line == "DESKISLE_PICTURE_ALPHA 1 \(sequence)" { supportsPictureAlpha = true }
             if let state = ScreenBacklight(line: line, sequence: sequence) { backlight = state }
-            if let reply = LayoutReply(line: line, sequence: sequence, backlight: backlight, widgetVersion: widgetVersion) {
+            if let reply = LayoutReply(line: line, sequence: sequence, backlight: backlight, widgetVersion: widgetVersion,
+                                       modelResident:(modelStatus?.size ?? 0)>0) {
                 self.widgetVersion = widgetVersion
                 self.supportsPictureAlpha = supportsPictureAlpha
                 self.glyphPacketLimit = glyphPacketLimit
                 wallpaperStatus?.supportsLandscape = supportsLandscapeWallpaper
                 self.wallpaperStatus = wallpaperStatus
+                self.modelStatus = modelStatus
                 self.backlight = backlight
                 return reply
             }

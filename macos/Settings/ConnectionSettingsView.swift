@@ -36,7 +36,7 @@ struct ConnectionSettingsView: View {
                                     GarminAccountView(editor: editor, settings: settings, login: settings.garminLogin)
                                 case .codex: codexCard
                                 case .notifications: notificationCard
-                                case .macLoad, .bluetooth, .pictures:
+                                case .macLoad, .bluetooth, .pictures, .model3D:
                                     LocalPluginView(plugin: selected, settings: settings.localPlugins,
                                                     editor: editor, showLayout: showLayout)
                                 case .pet: EmptyView()
