@@ -1,0 +1,11 @@
+DeskIsle's built-in widgets use Xiaomi MiSans.
+
+Embedded resource: grayscale glyph masks rendered from MiSans Regular 4.009.
+Font: Xiaomi Inc. MiSans-Regular.ttf (unmodified source font).
+Source package: https://hyperos.mi.com/font-download/MiSans.zip
+SHA-256 of MiSans-Regular.ttf:
+9c120f0a849bc0aa5048daae2a3c0f6eecd828b5b33fce682a9622833f5feea6
+
+MiSans is used under Xiaomi's MiSans Fonts Intellectual Property License Agreement.
+Official license and download: https://hyperos.mi.com/font/zh/download/
+Embedded font use and attribution: https://hyperos.mi.com/font/zh/faq/

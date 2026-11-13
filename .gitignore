@@ -1,0 +1,68 @@
+# Build products and downloaded dependencies
+build/
+managed_components/
+.build/
+.swiftpm/
+/dist/
+/DerivedData/
+*.app/
+*.dSYM/
+*.xcarchive/
+*.dmg
+*.pkg
+
+# ESP-IDF machine-generated configuration; keep sdkconfig.defaults and locks
+sdkconfig
+sdkconfig.old
+
+# Python environments, bytecode and tool caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local credentials; example environment files remain versioned
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.garminconnect/
+.garth/
+oauth1_token.json
+oauth2_token.json
+/session.json
+/auth.json
+/.codex/auth.json
+/.codex/sessions/
+/.codex/archived_sessions/
+/.codex/history.jsonl
+/.codex/log/
+/Connections/Garmin/sessions/
+hooks.json.deskisle-*.bak
+*.p12
+*.pfx
+
+# Local diagnostics and hardware backups (normally already under build/)
+*.log
+/hardware-backups/
+/wallpaper-backups/
+
+# Personal wallpapers, not part of the distributable app resources
+/wallpapers/gta-vi/
+/wallpapers/heiji-kazuha-osaka.png
+
+# macOS and per-user editor state
+.DS_Store
+._*
+xcuserdata/
+*.xcuserstate
+*.swp
+*.swo
+*~

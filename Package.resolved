@@ -1,0 +1,14 @@
+{
+  "originHash" : "aee0d0221a9c8952dc449146043bd34cb556f0ddfc9d1548974c94aea5f6338a",
+  "pins" : [
+    {
+      "identity" : "miucs",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/YoungTreeTree/miucs.git",
+      "state" : {
+        "revision" : "d7a84e38377e156eb85660853ccc623b8f92704d"
+      }
+    }
+  ],
+  "version" : 3
+}

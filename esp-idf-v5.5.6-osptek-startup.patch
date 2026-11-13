@@ -1,0 +1,18 @@
+diff --git a/components/esp_hw_support/port/esp32p4/rtc_clk_init.c b/components/esp_hw_support/port/esp32p4/rtc_clk_init.c
+index f82d414a..572fc0b3 100644
+--- a/components/esp_hw_support/port/esp32p4/rtc_clk_init.c
++++ b/components/esp_hw_support/port/esp32p4/rtc_clk_init.c
+@@ -100,6 +100,13 @@ void rtc_clk_init(rtc_clk_config_t cfg)
+         ESP_HW_LOGE(TAG, "invalid CPU frequency value");
+         abort();
+     }
++#if defined(BOOTLOADER_BUILD) && CONFIG_ESP32P4_REV_MIN_FULL >= 300
++    // Diagnostic settling interval for the OSPTEK rev3.2 board under test.
++    // Keep this scoped to the bootloader; this is not an upstream IDF fix.
++    if (efuse_hal_chip_revision() == 302) {
++        esp_rom_delay_us(5000);
++    }
++#endif
+     rtc_clk_cpu_freq_set_config(&new_config);
+ 
+     /* Re-calculate the ccount to make time calculation correct. */
