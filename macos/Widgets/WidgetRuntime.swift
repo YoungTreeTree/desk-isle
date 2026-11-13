@@ -75,6 +75,14 @@ final class WidgetRuntime: ObservableObject {
         if !Task.isCancelled, self[keyPath: notice] != message { self[keyPath: notice] = message }
     }
 
+    func displayError(in layout: ScreenLayout) -> String? {
+        if layout.garmin != nil, let garminDisplayNotice { return garminDisplayNotice }
+        if layout.codex != nil, let codexDisplayNotice { return codexDisplayNotice }
+        if layout.bluetooth != nil, let bluetoothDisplayNotice { return bluetoothDisplayNotice }
+        if layout.macLoad != nil, let macLoadDisplayNotice { return macLoadDisplayNotice }
+        return nil
+    }
+
     func connectionProfileChanged(_ profile: ConnectionProfile) {
         if previousProfile.codex != profile.codex {
             codexData = nil

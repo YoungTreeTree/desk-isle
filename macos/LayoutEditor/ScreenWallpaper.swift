@@ -230,6 +230,10 @@ struct WallpaperStore: Sendable {
         return wallpaper
     }
 
+    func loadRequired() throws -> ScreenWallpaper {
+        try PropertyListDecoder().decode(SavedWallpaper.self, from: Data(contentsOf: url)).makeWallpaper()
+    }
+
     func importImage(from sourceURL: URL) throws -> ScreenWallpaper {
         let file = try PictureFile(from: sourceURL)
         guard let source = CGImageSourceCreateWithData(file.data as CFData, nil),

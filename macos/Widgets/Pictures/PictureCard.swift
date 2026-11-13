@@ -163,6 +163,7 @@ struct PictureAsset: Sendable {
         var frames: [Frame] = []
         var nextFrame: TimeInterval = 0
         for index in 0..<count {
+            try Task.checkCancellation()
             let start = starts[index] * timeScale
             let isLastOfShortGIF = count > 1 && index == count - 1 && frames.count == 1
             guard (start >= nextFrame - 0.000_001 || isLastOfShortGIF),

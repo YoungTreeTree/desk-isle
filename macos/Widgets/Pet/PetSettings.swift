@@ -19,10 +19,18 @@ final class PetSettings: ObservableObject {
     private let keyboard = KeyboardEngine()
     private let session = NativePetSession()
     private let transport: SerialPetTransport
+    let legacySkinID: String
     private let preferences: UserDefaults
     private var subscriptions = Set<AnyCancellable>()
     private var connected = false
     private var runningSkin: String?
+    private var activeID: String?
+    var onSelectionChange: (() -> Void)?
+    var onReadinessChange: ((Bool) -> Void)?
+    var onStatusChange: ((String) -> Void)?
+    var nativeActive: Bool { session.active }
+    var activeSkinID: String? { runningSkin }
+    @Published var layoutName = "默认布局"
     private var audioStarted = false
     private var keyboardStarted = false
     private var audioStart: Task<Void, Never>?
@@ -35,7 +43,9 @@ final class PetSettings: ObservableObject {
         let catalog = PetCatalog.scan()
         skins = catalog
         let selected = preferences.string(forKey: "pet.skin") ?? legacy?.string(forKey: "MiucsSelectedVisualization.v1")
-        selectedID = catalog.first(where: { $0.id == selected })?.id ?? catalog.first?.id ?? ""
+        let initialSkin = catalog.first(where: { $0.id == selected })?.id ?? catalog.first?.id ?? ""
+        selectedID = initialSkin
+        legacySkinID = initialSkin
         enabled = preferences.object(forKey: "pet.enabled") as? Bool ?? true
         audioEnabled = preferences.object(forKey: "pet.audio") as? Bool
             ?? legacy?.object(forKey: "MiucsAudioCapture.enabled") as? Bool ?? false
@@ -44,7 +54,11 @@ final class PetSettings: ObservableObject {
         // Migrate once. Subsequent standalone Miucs preferences remain independent.
         preferences.set(selectedID, forKey: "pet.skin")
         preferences.set(audioEnabled, forKey: "pet.audio")
-        session.$status.removeDuplicates().sink { [weak self] in self?.status = $0 }.store(in: &subscriptions)
+        session.$status.removeDuplicates().sink { [weak self] value in
+            self?.status = value
+            self?.onStatusChange?(value)
+        }.store(in: &subscriptions)
+        session.$active.removeDuplicates().sink { [weak self] in self?.onReadinessChange?($0) }.store(in: &subscriptions)
         keyboard.$state.removeDuplicates().sink { [weak self] in self?.keyboardState = $0 }.store(in: &subscriptions)
         audio.$status.removeDuplicates().sink { [weak self] in self?.audioStatus = $0 }.store(in: &subscriptions)
     }
@@ -58,12 +72,30 @@ final class PetSettings: ObservableObject {
     func select(_ id: String) {
         guard selectedID != id, skins.contains(where: { $0.id == id }) else { return }
         selectedID = id
+        onSelectionChange?()
+    }
+
+    func editSkin(_ id: String, layoutName: String) {
+        selectedID = id
+        self.layoutName = layoutName
+    }
+
+    func pauseForLayoutChange(skinID: String, hasPet: Bool) async {
+        // Geometry-only switches can keep the existing board session and input stream.
+        guard !hasPet || runningSkin != skinID else { return }
+        update(connected: false, hasComponent: false)
+        await session.waitUntilStopped()
+    }
+
+    func activateSkin(_ id: String) {
+        activeID = id
         preferences.set(id, forKey: "pet.skin")
         reconcile()
     }
 
     func setEnabled(_ value: Bool) {
         enabled = value; preferences.set(value, forKey: "pet.enabled"); reconcile()
+        onReadinessChange?(session.active)
     }
     func setAudioEnabled(_ value: Bool) {
         audioEnabled = value; preferences.set(value, forKey: "pet.audio"); reconcile()
@@ -73,16 +105,12 @@ final class PetSettings: ObservableObject {
     }
     func reload() {
         skins = PetCatalog.scan()
-        if !skins.contains(where: { $0.id == selectedID }) {
-            selectedID = skins.first?.id ?? ""
-            preferences.set(selectedID, forKey: "pet.skin")
-        }
         runningSkin = nil
         reconcile()
     }
 
     private func reconcile() {
-        let skin = skins.first { $0.id == selectedID }
+        let skin = skins.first { $0.id == activeID }
         let wanted = enabled && hasComponent && skin != nil
         if wanted, let skin {
             if runningSkin != skin.id {
@@ -163,7 +191,9 @@ struct PetSettingsView: View {
                 Toggle("在小屏上显示桌宠", isOn: Binding(get: { settings.enabled }, set: { settings.setEnabled($0) }))
                 Text(settings.status).font(.caption).foregroundStyle(.secondary)
             } header: { Text("Miucs 桌宠") }
-            Section("皮肤") {
+            Section("皮肤 · \(settings.layoutName)") {
+                Text("皮肤保存在当前编辑的布局中，应用布局后更新小屏。")
+                    .font(.caption).foregroundStyle(.secondary)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                     ForEach(settings.skins) { skin in
                         Button { settings.select(skin.id) } label: {

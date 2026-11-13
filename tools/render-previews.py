@@ -19,11 +19,7 @@ def main():
         shutil.copytree(ROOT / name, target)
     (WORK / "macos/App/DeskIsleApp.swift").unlink()
     shutil.copy2(ROOT / "tools/previews/PreviewMain.swift", WORK / "macos/PreviewMain.swift")
-    editor = WORK / "macos/LayoutEditor/LayoutEditor.swift"
-    source = editor.read_text()
-    original = '(try? WallpaperStore.local().load()) ?? ScreenWallpaper.bundled'
-    assert original in source, "Update the preview isolation when LayoutEditor initialization changes"
-    editor.write_text(source.replace(original, 'ScreenWallpaper.bundled'))
+    # PreviewMain injects a temporary layout library; production initialization no longer reads legacy wallpaper.
     manifest = (ROOT / "Package.swift").read_text()
     manifest = manifest.replace(',\n        .testTarget(name: "DeskIsleTests", dependencies: ["DeskIsle"], path: "tests/macos")', '')
     (WORK / "Package.swift").write_text(manifest)

@@ -47,7 +47,7 @@ struct DeskIsleWindow: View {
 
             switch page {
             case .layout:
-                LayoutPage(editor: editor, showConnections: { page = .connections })
+                LayoutLibraryPage(editor: editor, showConnections: { page = .connections })
             case .display:
                 DisplaySettingsView(settings: displaySettings)
             case .connections:
